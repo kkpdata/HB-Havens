@@ -37,5 +37,5 @@ De tool is in opdracht van Rijkswaterstaat-WVL ontwikkeld door HKV Lijn in Water
 
 # Contactpersoon
 
-[Robert Slomp](robert.slomp@rws.nl) [Rijkswaterstaat-WVL](https://www.rijkswaterstaat.nl/over-ons/onze-organisatie/organisatiestructuur/water-verkeer-en-leefomgeving/index.aspx)
+Robert Slomp (robert.slomp@rws.nl) [Rijkswaterstaat-WVL](https://www.rijkswaterstaat.nl/over-ons/onze-organisatie/organisatiestructuur/water-verkeer-en-leefomgeving/index.aspx)
 
