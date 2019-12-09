@@ -1,0 +1,1 @@
+https://waterveiligheidsportaal.nl/geoserver/wfs?request=GetFeature&service=wfs&version=1.0.0&typename=nbpw:dijktrajecten&outputformat=SHAPE-ZIP&format_options=filename:dijktrajecten.zip
