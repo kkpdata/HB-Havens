@@ -9,7 +9,6 @@ Description :
 
 import os
 import fiona
-import numpy as np
 from shapely.geometry import LineString, shape
 
 DATADIR = os.path.join(os.path.dirname(__file__), '..', 'data')

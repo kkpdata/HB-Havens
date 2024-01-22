@@ -7,32 +7,14 @@ Description :
 
 """
 
-import itertools
-import os
-import time
-from datetime import datetime
 from math import isclose
-
-from descartes import PolygonPatch
-
-import geopandas as gpd
+from shapely.plotting import patch_from_polygon as PolygonPatch
 import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-from matplotlib.backends.backend_qt5agg import (FigureCanvasQTAgg,
-                                                NavigationToolbar2QT)
-from matplotlib.collections import LineCollection, PatchCollection
-import matplotlib
-from matplotlib.figure import Figure
-from matplotlib.patches import Arrow
+from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT
 
 from PyQt5 import QtCore, QtGui, QtWidgets
-from shapely.geometry import LineString, Point, Polygon, MultiPolygon, MultiLineString
 
-from hbhavens import core, io, ui
 from hbhavens.ui import models as HBHModels
-from hbhavens.ui import threads
-from hbhavens.core import geometry
 
 # Adjust rc Parameters
 plt.rcParams['axes.linewidth'] = 0.5
@@ -749,7 +731,7 @@ class DataFrameWidget(QtWidgets.QTableView):
         h = self.horizontalHeader.height() - 12
         for i in range(self.model.rowCount()):
             h += self.rowHeight(i) * 1.1
-        return QtCore.QSize(w, h)
+        return QtCore.QSize(w, int(h))
 
     def fixed_fit_to_content(self, min_column_width=0):
         size = self.get_QTableWidget_size(min_column_width)
@@ -843,8 +825,8 @@ class PharosTableWidget(QtWidgets.QTableWidget):
         table = self.pharos.spectrum_table
 
         # Determine frequencies (index) and directions (columns)
-        self.frequencies = table.index.values.tolist()
-        self.directions = table.columns.values.tolist()
+        self.frequencies = table.index.tolist()
+        self.directions = table.columns.tolist()
         
         # Determine size from spectrum
         nf = len(self.frequencies)

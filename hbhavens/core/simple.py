@@ -12,14 +12,7 @@ import os
 import numpy as np
 import pandas as pd
 import geopandas as gpd
-
-
-from shapely.geometry import LineString, Point, Polygon, MultiPoint, MultiLineString
-from shapely.ops import linemerge as _linemerge
-
-from scipy.interpolate import interp2d as _interp2d
-
-from matplotlib import path
+from shapely.geometry import LineString, MultiLineString
 
 from hbhavens import core
 from hbhavens.core.geometry import is_left, as_linestring_list
@@ -42,6 +35,7 @@ class SimpleCalculation:
             'Tp' : 'Tp',
             'Tm-1,0' : 'Tm-1,0',
             'Wave direction': 'Combined wave direction',
+            'Storage situation VZM': 'Storage situation VZM'
         }
 
         # Initialize simple calculation classes
@@ -50,6 +44,7 @@ class SimpleCalculation:
         self.wavegrowth = LocalWaveGrowth(self)
         self.wavebreaking = WaveBreaking(self)
         self.combinedresults = CombineResults(self)
+
 
     def initialize(self):
         """
@@ -99,10 +94,10 @@ class SimpleCalculation:
             if progress_function:
                 progress_function(1, 'Berekenen van golfbreking...')
             self.wavebreaking.run()
-        if progress_function:
-            progress_function(1, 'Combineren van resultaten...')
 
         # Combine
+        if progress_function:
+            progress_function(1, 'Combineren van resultaten...')
         self.combinedresults.run(processes)
 
         self.mainmodel.project.settings['simple']['finished'] = True
@@ -166,7 +161,7 @@ class Diffraction:
         """
         Function to calculate wave reduction due to diffraction. The wave
         reduction is calculated based on the diffraction tables given by
-        Goda (@@@@), which can be used for one or two breakwaters.
+        Goda (1978, 2000), which can be used for one or two breakwaters.
 
         Parameters
         ----------
@@ -192,6 +187,7 @@ class Diffraction:
             columns=['Wave direction', 'Lr', 'Beq', 'Smax', 'table_type', 'breakwater', 'shading', 'X', 'Y', 'Kd', 'Diffraction direction'],
             dtype=float)
 
+
     def initialize(self):
         """
         Initialize calculation. Geometries are retrieved from schematization, and the output
@@ -200,7 +196,7 @@ class Diffraction:
         # Geometries
         self.wlevcol = self.mainmodel.hydraulic_loads.wlevcol
         self.breakwaters = self.schematisation.breakwaters
-        self.bedlevel = self.mainmodel.project.settings['schematisation']['representative_bedlevel']
+        self.bedlevel = self.schematisation.bedlevel
         self.inner = self.schematisation.inner
         self.buffered_inner = self.schematisation.buffered_inner
 
@@ -235,6 +231,7 @@ class Diffraction:
         # self.output.
         self.output.sort_index(inplace=True)
     
+
     def diffraction_angle(self, bwi, location):
         """
         Calculate diffraction angle
@@ -266,10 +263,11 @@ class Diffraction:
             # Assign to array
             angles[breakwaterindex == idx] = angle
         
-        if isinstance(bwi, (np.float, np.int, int, float)):
+        if isinstance(bwi, (np.floating, np.integer, int, float)):
             angles = angles.squeeze()
 
         return angles
+
 
     def _determine_shading_breakwater(self, wavedirections, locationcrd):
         """
@@ -315,29 +313,6 @@ class Diffraction:
 
         return np.array(index)
             
-        # # Draw a line from the first breakwater in the wave direction
-        # firstlines = core.geometry.extend_point_to_linestring(
-        #     self.breakwaters.at[0, 'breakwaterhead'].coords[0], wavedirections, (100000., -100000.))
-        # # If the head of the second breakwater is on the left, the first breakwater is the right one
-        # rightindex = [0 if is_left(self.breakwaters.at[1, 'breakwaterhead'].coords[0], firstline) else 1
-        #               for firstline in firstlines]
-        # # Assign opposite index to rightindex
-        # leftindex = [1 if ridx == 0 else 0 for ridx in rightindex]
-
-        # # If the location is on the left of left breakwater
-        # index = np.ones(len(wavedirections)) * 2
-        # head_crds = [self.breakwaters.at[leftindex, 'breakwaterhead'].coords[0] for idx in leftindex]
-        # leftlines = core.geometry.extend_point_to_linestring(
-        #     self.breakwaters.at[leftindex, 'breakwaterhead'].coords[0], wavedirections, (100000., -100000.))
-        # index[np.array([is_left(locationcrd, leftline) for leftline in leftlines])] = leftindex
-
-        # # If the location is on the right of the right breakwater
-        # rightline = core.geometry.extend_point_to_linestring(
-        #     self.breakwaters.at[rightindex, 'breakwaterhead'].coords[0], wavedirections, (100000., -100000.))
-        # index[~np.array([is_left(locationcrd, rightline) for leftline in rightlines])] = rightindex
-        
-        # Else it is in the center (2)
-        return index
 
     def run(self):
         """
@@ -346,7 +321,7 @@ class Diffraction:
         2. Calculate equivalent opening width per situation, and check if
            the harbor entrance is reachable by the wave (the wave should not cross
            the inner area of the harbor)
-        3. 
+        3. Calculate the diffraction coefficients
         """
 
         # Change dataframe index
@@ -436,7 +411,8 @@ class Diffraction:
         
         # Three categories: table_type 2, origin in middle, table type 1, origin
         # on breakwater 1, table_type 1, origin on second breakwater (if 2 bws)
-        for locnaam, group in self.output.groupby(level=0):
+        # for locnaam, group in self.output.groupby(level=0, observed=False):
+        for locnaam, group in self.output.groupby(level=0, observed=False):
             location = self.result_locations.set_index('Naam').loc[locnaam, 'geometry'].coords[0]
             wavedirections = group.index.get_level_values(1).values
 
@@ -465,7 +441,7 @@ class Diffraction:
             # Two breakwaters, but Beq is such that table type is 1
             if self.nbreakwaters == 2 and any(group['table_type'] == 1):
                 # Check where the opening is wide, the other cases are Beq = 0.0
-                wide_opening = group['Beq'].gt(5 * group['Lr']).array & group['table_type'].eq(1).array
+                wide_opening = (group['Beq'].gt(5 * group['Lr']) & group['table_type'].eq(1)).array
                 
                 if any(wide_opening):
                     """
@@ -490,7 +466,7 @@ class Diffraction:
                                 breakwater=breakwater
                             )
                             Kd.append([self.interp_diffraction(X, Y, row.Lr, row.Beq, row.table_type, row.Smax)
-                                    for X, Y, row in zip(x_tmp, y_tmp, group.loc[wide_opening].itertuples())])
+                                    for X, Y, row in zip(x_tmp, y_tmp, group.iloc[np.where(wide_opening==True)].itertuples())])
                         Kd = np.c_[Kd]
                         # Add diffraction directions for the used breakwater (max Kd)
                         breakwater_index[shading_index == 2] = np.argmax(Kd, axis=0)
@@ -574,6 +550,7 @@ class Diffraction:
             # Add to output dictionary
             self.diffraction_tables[tablename] = core.models.InterpolationTable(os.path.join(tabledir, table))            
 
+
     def calc_eq_opening_width(self, wavedir):
         """
         Calculates equivalent opening width of the harbor entrance.
@@ -619,6 +596,7 @@ class Diffraction:
         
         return distance
 
+
     def interp_diffraction_row(self, row):
         return self.interp_diffraction(row.X, row.Y, row.Lr, row.Beq, int(row.table_type), int(row.Smax))
 
@@ -647,51 +625,56 @@ class Diffraction:
         Kd : float
             Diffraction coefficient
         """
+        
+        # catch Beq = nan --> conditions with periods = 0 lead to Lr = nan and Beq = nan
+
         if table_type == 1:
             # Select correct table
             tablename = 'type_1_smax{}'.format(Smax)
             Kd = self.diffraction_tables[tablename].interpolate(X, Y, Lr)
-
-        else:
-            # Calculate Beq / Lr
-            BL = Beq / Lr
-
-            # For Beq/Lr < 1.0, use the B/L=1 tables
-            if BL <= 1.0:
-                # Check if X / Lr and Y / Lr are in the domain, if so, use the detailed table
-                size = 'small' if self.diffraction_tables['type_2_BL1_small_smax{}'.format(Smax)].check_range(X, Y, Lr) else 'large'
-                tablename = 'type_2_BL1_{}_smax{}'.format(size, Smax)
-                Kd = self.diffraction_tables[tablename].interpolate(X, Y, Lr)
-
-
-            # For Beq/Lr >= 8.0, use the B/L=1 tables
-            elif BL >= 8.0:
-                # Check if X / Lr and Y / Lr are in the domain, if ss, use the detailed table
-                size = 'small' if self.diffraction_tables['type_2_BL8_small_smax{}'.format(Smax)].check_range(X, Y, Lr) else 'large'
-                tablename = 'type_2_BL8_{}_smax{}'.format(size, Smax)
-                Kd = self.diffraction_tables[tablename].interpolate(X, Y, Lr)
-
-            # For values of Beq/Lr in between 1.0 and 8.0: interpolate
+        else: # table_type == 2
+            if np.isnan(Beq):
+                Kd = 0
             else:
-                # Check what the lower and upper table for the value of Beq/Lr are
-                BLgrid = np.array([1, 2, 4, 8])
-                BL_small = BLgrid[BLgrid < BL].max()
-                BL_large = BLgrid[BLgrid > BL].min()
+                # Calculate Beq / Lr
+                BL = Beq / Lr
 
-                # Check if X / Lr and Y / Lr are in the domain, if so, use the detailed table
-                size = 'small' if self.diffraction_tables['type_2_BL{}_small_smax{}'.format(BL_small, Smax)].check_range(X, Y, Lr) else 'large'
-                tablename = 'type_2_BL{}_{}_smax{}'.format(BL_small, size, Smax)
-                Kd_small = self.diffraction_tables[tablename].interpolate(X, Y, Lr)
+                # For Beq/Lr < 1.0, use the B/L=1 tables
+                if BL <= 1.0:
+                    # Check if X / Lr and Y / Lr are in the domain, if so, use the detailed table
+                    size = 'small' if self.diffraction_tables['type_2_BL1_small_smax{}'.format(Smax)].check_range(X, Y, Lr) else 'large'
+                    tablename = 'type_2_BL1_{}_smax{}'.format(size, Smax)
+                    Kd = self.diffraction_tables[tablename].interpolate(X, Y, Lr)
 
-                 # Check if X / Lr and Y / Lr are in the domain, if so, use the detailed table
-                size = 'small' if self.diffraction_tables['type_2_BL{}_small_smax{}'.format(BL_large, Smax)].check_range(X, Y, Lr) else 'large'
-                tablename = 'type_2_BL{}_{}_smax{}'.format(BL_large, size, Smax)
-                Kd_large = self.diffraction_tables[tablename].interpolate(X, Y, Lr)
+                # For Beq/Lr >= 8.0, use the B/L=8 tables
+                elif BL >= 8.0:
+                    # Check if X / Lr and Y / Lr are in the domain, if ss, use the detailed table
+                    size = 'small' if self.diffraction_tables['type_2_BL8_small_smax{}'.format(Smax)].check_range(X, Y, Lr) else 'large'
+                    tablename = 'type_2_BL8_{}_smax{}'.format(size, Smax)
+                    Kd = self.diffraction_tables[tablename].interpolate(X, Y, Lr)
 
-                # Interpolate between de small and large values
-                Kd = np.interp(BL, [BL_small, BL_large], [Kd_small, Kd_large])
+                # For values of Beq/Lr in between 1.0 and 8.0: interpolate
+                else:
+                    # Check what the lower and upper table for the value of Beq/Lr are
+                    BLgrid = np.array([1, 2, 4, 8])
+                    BL_small = BLgrid[BLgrid < BL].max()
+                    BL_large = BLgrid[BLgrid > BL].min()
+
+                    # Check if X / Lr and Y / Lr are in the domain, if so, use the detailed table
+                    size = 'small' if self.diffraction_tables['type_2_BL{}_small_smax{}'.format(BL_small, Smax)].check_range(X, Y, Lr) else 'large'
+                    tablename = 'type_2_BL{}_{}_smax{}'.format(BL_small, size, Smax)
+                    Kd_small = self.diffraction_tables[tablename].interpolate(X, Y, Lr)
+
+                    # Check if X / Lr and Y / Lr are in the domain, if so, use the detailed table
+                    size = 'small' if self.diffraction_tables['type_2_BL{}_small_smax{}'.format(BL_large, Smax)].check_range(X, Y, Lr) else 'large'
+                    tablename = 'type_2_BL{}_{}_smax{}'.format(BL_large, size, Smax)
+                    Kd_large = self.diffraction_tables[tablename].interpolate(X, Y, Lr)
+
+                    # Interpolate between de small and large values
+                    Kd = np.interp(BL, [BL_small, BL_large], [Kd_small, Kd_large])
 
         return Kd
+
 
 def calc_repr_wave_length(d, T):
     """
@@ -722,7 +705,7 @@ def calc_repr_wave_length(d, T):
     """
 
     # Convert datatype if necessary
-    if isinstance(T, (int, np.integer, float, np.float)):
+    if isinstance(T, (int, np.integer, float, np.floating)):
         T = np.array([T])
 
     # Create empty array for Lr
@@ -777,6 +760,7 @@ class Transmission:
         """
         self.wlevcol = self.mainmodel.hydraulic_loads.wlevcol
         self.breakwaters = self.mainmodel.schematisation.breakwaters
+        self.breakwater_properties = self.mainmodel.project.settings['schematisation']['breakwater_properties']
         self.inner = self.mainmodel.schematisation.inner
         self.area_union = self.mainmodel.schematisation.area_union
 
@@ -818,16 +802,23 @@ class Transmission:
         """
         # Step 6A: Calculate transmission zone for each wave direction where Hs is nonzero        
 
-        loccrds = np.stack(self.result_locations.sort_values(by='Naam')['geometry'].values)
+        loccrds = self.result_locations.sort_values(by='Naam').get_coordinates().to_numpy()
         locationnames = self.result_locations.sort_values(by='Naam')['Naam'].values
         hl_cols = [self.wlevcol, 'Hs', 'Wave direction']
 
         waterlevels, Hs, wavedirections = self.hydraulic_loads.sort_index()[hl_cols].values.T
         unique_directions = np.unique(wavedirections)
 
+        # Collect breakwater properties. Ignore properties that don't match number of breakwaters
+        heights = [self.breakwater_properties['height'][i] for i,_ in self.breakwaters.iterrows()] 
+        alphas = [self.breakwater_properties['alpha'][i] for i,_ in self.breakwaters.iterrows()] 
+        betas = [self.breakwater_properties['beta'][i] for i,_ in self.breakwaters.iterrows()]
+        order = sorted(range(len(heights)), key=lambda k: heights[k])
+
         # Determine locations in transmission zone for each of the breakwaters
         transmission_zones = {}
-        for idx, breakwater in self.breakwaters.sort_values(by='hoogte').iterrows():
+        for idx in order:
+            breakwater = self.breakwaters.iloc[idx]
             # Create an empty dictionary for the breakwater, to add wave directions per location
             transmission_zones[idx] = {name: [] for name in locationnames}
             geo = as_linestring_list(breakwater.geometry.difference(self.area_union))
@@ -870,17 +861,20 @@ class Transmission:
             # For each breakwater, from low (much transmission) to high (small transmission)
             # First the lowest breakwater, since that gives the most transmission, after this
             # the higher, since this can extra shade the location 
-            for idx, breakwater in self.breakwaters.sort_values(by='hoogte', ascending=False).iterrows():
+            for idx in reversed(order):
+                height = heights[idx]
+                alpha = alphas[idx]
+                beta = betas[idx]
 
                 # Determine which of the wave directions is in the transmission zone for the breakwater
                 inzone = np.isin(wavedirections, transmission_zones[idx][name])
                                         
                 # Step 6B: Calculating freeboard (height of breakwater above water, positive means low transmission)
-                freeboard = -waterlevels[inzone] + breakwater['hoogte']
+                freeboard = -waterlevels[inzone] + height
                 # Step 6C: Calculating transmission coefficient
-                outarr['Kt'][inzone] = self._calc_transmission_coefficient(freeboard, Hs[inzone], breakwater['alpha'], breakwater['beta'])
-                outarr['Alpha'][inzone] = breakwater['alpha']
-                outarr['Beta'][inzone] = breakwater['beta']
+                outarr['Kt'][inzone] = self._calc_transmission_coefficient(freeboard, Hs[inzone], alpha, beta)
+                outarr['Alpha'][inzone] = alpha
+                outarr['Beta'][inzone] = beta
                 outarr['Vrijboord'][inzone] = freeboard
                 outarr['Breakwater'][inzone] = idx
             
@@ -956,7 +950,7 @@ class Transmission:
             dam coefficient
         beta : float
             dam coefficient
-w
+
         Returns
         -------
         Kt : float
@@ -1030,7 +1024,7 @@ class LocalWaveGrowth:
         self.flooddefence = self.mainmodel.schematisation.flooddefence
         self.inner = self.mainmodel.schematisation.inner
         self.harborarea = self.mainmodel.schematisation.harborarea
-        self.bedlevel = self.mainmodel.project.settings['schematisation']['representative_bedlevel']
+        self.bedlevel = self.mainmodel.schematisation.bedlevel
 
         # Prepare output structure
         self.output.delete_all()
@@ -1136,9 +1130,9 @@ class LocalWaveGrowth:
         """
         # Create empty GeoDataFrame for fetchlines
         self.directions = np.arange(0., 360., self.step)
-        locations = sorted(self.result_locations['Naam'].values.tolist())
+        locations = sorted(self.result_locations['Naam'].tolist())
         index = pd.MultiIndex.from_product([locations, self.directions], names=['Location', 'Direction'])
-        self.fetchlines = gpd.GeoDataFrame(index=index, columns=['fetch', 'max_fetch', 'average_depth'], crs='epsg:28992')
+        self.fetchlines = gpd.GeoDataFrame(index=index, columns=['fetch', 'max_fetch', 'average_depth', 'geometry'], crs='epsg:28992')
 
         # Loop trough locations
         lines = []
@@ -1152,14 +1146,14 @@ class LocalWaveGrowth:
                 as_LineString=True
             )
 
-        self.fetchlines.geometry = lines
+        self.fetchlines['geometry'] = lines
 
         # Determine part of fetchlines that overlap with harbor inner area
         lines = self.fetchlines.intersection(self.inner)
         # In case of a MultiLineString, use only the part connected to the origin
-        lines = [line[-1] if isinstance(line, MultiLineString) else line for line in lines]
+        lines = [line.geoms[-1] if isinstance(line, MultiLineString) else line for line in lines]
         # Add new parts to geometry
-        self.fetchlines.geometry = lines
+        self.fetchlines['geometry'] = lines
         self.fetchlines['fetch'] = self.fetchlines.length
 
 
@@ -1232,7 +1226,7 @@ class LocalWaveGrowth:
         """
 
         filepath = os.path.join(self.datadir, 'Up2U10', 'Up2U10.dat')
-        self.windtrans = pd.read_csv(filepath, comment='%', header=None, delim_whitespace=True, names=['Upot', 'U10'])
+        self.windtrans = pd.read_csv(filepath, comment='%', header=None, delim_whitespace=True, names=['Upot', 'U10'], encoding='latin-1', usecols=[0,3])
 
 
     def _calc_U10(self, Upot):
@@ -1273,9 +1267,9 @@ class LocalWaveGrowth:
         """
 
         # Convert input to array format
-        if isinstance(Feq, (float, np.float, int, np.integer)):
+        if isinstance(Feq, (float, np.floating, int, np.integer)):
             Feq = np.array([Feq])
-        if isinstance(U10, (float, np.float, int, np.integer)):
+        if isinstance(U10, (float, np.floating, int, np.integer)):
             U10 = np.array([U10])
 
         Hs_lg = np.zeros_like(Feq)
@@ -1312,11 +1306,11 @@ class LocalWaveGrowth:
         """
 
         # Converteer scalar input to arrays
-        if isinstance(d, (float, np.float, int, np.int)):
+        if isinstance(d, (float, np.floating, int, np.integer)):
             d = np.array([d])
-        if isinstance(fe, (float, np.float, int, np.int)):
+        if isinstance(fe, (float, np.floating, int, np.integer)):
             fe = np.array([fe])
-        if isinstance(u, (float, np.float, int, np.int)):
+        if isinstance(u, (float, np.floating, int, np.integer)):
             u = np.array([u])
 
         # Create output arrays to fill
@@ -1406,11 +1400,11 @@ class WaveBreaking:
         2. Determine minimum bed level over lines. If no harbor elements
            are crossed, use the terrain level.
         3. Determine where (wave length is larger than L0,p, AND terrain elements present),
-           for these locations, calculate max wave height with fraction * water depth
-           For the other locations, calculate max wave height with fraction * (water level - rep. bottom level)
+           For these locations: calculate max wave height with fraction * water depth
+           For the other locations: calculate max wave height with fraction * (water level - rep. bottom level)
         """
 
-        rep_bedlevel = self.mainmodel.project.settings['schematisation']['representative_bedlevel']
+        rep_bedlevel = self.schematisation.bedlevel
 
         # Determine wave breaking lines. This is per location, the fetch crossing the harbor terrain
         self.determine_wave_breaking_lines()
@@ -1429,8 +1423,7 @@ class WaveBreaking:
             elif len(heights) == 1:
                 bedlevel = heights[0]
             else:
-                logger.warning('heck how the code ended up here.')
-                bedlevel = min(heights)
+                raise ValueError('More heights than expected')
 
             self.output.loc[location.Naam, 'Terrain level'] = bedlevel
 
@@ -1469,9 +1462,9 @@ class WaveBreaking:
         """
         # Create empty GeoDataFrame for fetchlines
         self.directions = np.arange(0., 360. + self.step*0.1, self.step)
-        locations = sorted(self.schematisation.result_locations['Naam'].values.tolist())
+        locations = sorted(self.schematisation.result_locations['Naam'].tolist())
         index = pd.MultiIndex.from_product([locations, self.directions], names=['Location', 'Direction'])
-        self.wavelines = gpd.GeoDataFrame(index=index, columns=['max_br_dst'], crs='epsg:28992')
+        self.wavelines = gpd.GeoDataFrame(index=index, columns=['max_br_dst', 'geometry'], crs='epsg:28992')
 
         # Loop trough locations
         lines = []
@@ -1485,14 +1478,14 @@ class WaveBreaking:
                 as_LineString=True
             )
 
-        self.wavelines.geometry = lines
+        self.wavelines['geometry'] = lines
 
         # Determine part of wave lines that overlap with the harbor terrain
         lines = self.wavelines.intersection(self.schematisation.area_union)
         # In case of a MultiLineString, use only the part connected to the origin
-        lines = [line[0] if isinstance(line, MultiLineString) else line for line in lines]
+        lines = [line.geoms[0] if isinstance(line, MultiLineString) else line for line in lines]
         # Add new parts to geometry
-        self.wavelines.geometry = lines
+        self.wavelines['geometry'] = lines
         self.wavelines['max_br_dst'] = self.wavelines.length
 
 

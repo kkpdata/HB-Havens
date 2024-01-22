@@ -8,16 +8,8 @@ Description : General classes for HB Havens
 """
 
 import numpy as np
-import matplotlib.pyplot as plt
 import pandas as pd
-import geopandas as gpd
-from shapely.geometry import LineString, Point, Polygon
-from shapely.prepared import prep as _prep
 from scipy.interpolate import interp2d as _interp2d
-from hbhavens import core
-from hbhavens import io
-from hbhavens import ui
-import sqlite3
     
 class InterpolationTable:
     

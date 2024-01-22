@@ -366,8 +366,6 @@ class GeneratePharosFilesThread(QtCore.QThread):
             err_info = sys.exc_info()
             self.error_signal.emit(err_info)
 
-
-
 class UpdateTilesThread(QtCore.QThread):
     """
     Thread for generating output files

@@ -1,0 +1,8 @@
+%
+%
+% Run:0303  Table:plist             SWAN version:41.20ABa
+%
+%       Xp            Yp            Depth         Watlev        Botlev        Hsig          Dir           TPsmoo        Tm_10       X-Windv       Y-Windv         Dspr          dHs           dTm           FSpr          PkDir         RTpeak        Tm01          Tm02          Wlen     
+%       [m]           [m]           [m]           [m]           [m]           [m]           [degr]        [sec]         [sec]         [m/s]         [m/s]         [degr]        [m]           [sec]         [ ]           [degr]        [sec]         [sec]         [sec]         [m]      
+%
+      251506.       609497.       23.6242        1.0000       22.6242       2.30636       336.601        5.5172        4.9108       -0.0000      -26.6900       30.7102      0.001031      0.000988      0.519970       335.000        5.6344        4.4855        4.1503       26.8159 

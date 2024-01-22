@@ -11,12 +11,10 @@ import os
 import sys
 import traceback
 
-import pandas as pd
 from PyQt5 import Qt, QtCore, QtGui, QtWidgets
 
 from hbhavens.core.models import MainModel
 from hbhavens.ui import dialogs
-from hbhavens.ui import models as HBHModels
 from hbhavens.ui import tabs, widgets
 from hbhavens.ui.tabs.hydraulicloads import HydraulicLoadTab
 from hbhavens.ui.tabs.overviewmap import OverviewMapTab
@@ -111,15 +109,18 @@ class MainWindow(QtWidgets.QMainWindow):
         self.init_ui()
 
         def test_exception_hook(exctype, value, tback):
-            # self.no_exceptions = False
+            """
+            Function that catches errors and gives a Notification
+            instead of a crashing application.
+            """
             sys.__excepthook__(exctype, value, tback)
             self.setCursorNormal()
-            dialogs.show_dialog(
+            dialogs.NotificationDialog(
                 text='\n'.join(traceback.format_exception_only(exctype, value)),
                 severity='critical',
                 details='\n'.join(traceback.format_tb(tback))
             )
-            
+        
 
         sys.excepthook = test_exception_hook
 
@@ -360,14 +361,15 @@ class MainWindow(QtWidgets.QMainWindow):
         exitAction.setStatusTip('HB Havens afsluiten')
         exitAction.triggered.connect(self.exit_hbhavens)
 
+        manualAction = QtWidgets.QAction(self.getIcon('info.png'), 'Gebruikershandleiding...', self)
+        exitAction.setShortcut('Ctrl+M')
+        manualAction.setStatusTip('Gebruikershandleiding')
+        manualAction.triggered.connect(self.open_manual)
+
         aboutAction = QtWidgets.QAction(self.getIcon('info.png'),'Over...',self)
         aboutAction.setShortcut(QtGui.QKeySequence.HelpContents)
         aboutAction.setStatusTip('Over HB Havens')
         aboutAction.triggered.connect(self.about)
-
-        manualAction = QtWidgets.QAction(self.getIcon('info.png'), 'Gebruikershandleiding', self)
-        manualAction.setStatusTip('Gebruikershandleiding')
-        manualAction.triggered.connect(self.open_manual)
 
         file_menu = menubar.addMenu('&Bestand')
         file_menu.addAction(new_action)
@@ -379,12 +381,13 @@ class MainWindow(QtWidgets.QMainWindow):
         file_menu.addAction(exitAction)
 
         help_menu = menubar.addMenu('&Help')
-        help_menu.addAction(aboutAction)
         help_menu.addAction(manualAction)
+        file_menu.addSeparator()
+        help_menu.addAction(aboutAction)
 
     def open_manual(self):
 
-        handleiding = os.path.join(os.path.dirname(__file__), '..', '..', 'doc', 'Gebruikershandleiding', f"Gebruikershandleiding HB Havens - versie {self.mainmodel.appVersion}.docx")
+        handleiding = os.path.join(os.path.dirname(__file__), '..', '..', 'doc', 'Gebruikershandleiding', f"Gebruikershandleiding HB Havens - versie {self.mainmodel.appVersion}.pdf")
         handleiding = os.path.abspath(handleiding.lower())#.replace('/', '\\\\')
         url = QtCore.QUrl('file:///'+handleiding)
         if not QtGui.QDesktopServices.openUrl(url):

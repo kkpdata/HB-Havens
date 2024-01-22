@@ -8,10 +8,8 @@ Description :
 """
 import os
 import shutil
-import errno
 import json
 import itertools
-
 import numpy as np
 
 class PharosIO:

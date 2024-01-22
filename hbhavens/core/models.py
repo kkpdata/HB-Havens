@@ -20,8 +20,7 @@ import geopandas as gpd
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from descartes import PolygonPatch
-from matplotlib import path
+from shapely.plotting import patch_from_polygon as PolygonPatch
 from scipy.interpolate import interp2d, interp1d
 from shapely.geometry import (
     LineString, MultiLineString, MultiPolygon, Point, Polygon)
@@ -43,8 +42,8 @@ from hbhavens.core.swan import Swan
 
 logger = logging.getLogger(__name__)
 
-__version__ = "2.0"
-__date__ = "september 2019"
+__version__ = "23.1.1"
+__date__ = "september 2023"
 
 class MainModel:
     """
@@ -116,19 +115,16 @@ class MainModel:
             if len(self.schematisation.breakwaters) == 2:
                 self.schematisation.generate_harbor_bound()
                 logger.info('..Generated harbor bound for two breakwaters.')
-
             elif harbor_settings['entrance_coordinate']:
-                self.schematisation.entrance_coordinate = tuple(harbor_settings['entrance_coordinate'])
+                self.schematisation.entrance = tuple(harbor_settings['entrance_coordinate'])
                 self.schematisation.generate_harbor_bound()
                 logger.info('..Generated harbor bound for single breakwater and entrance coordinate.')
-
             else:
                 logger.warning(f'No entrance coordinate given: {harbor_settings["entrance_coordinate"]}, did not generate harbor bound.')
         else:
-            logger.warning('Did not load break waters from project')
+            logger.warning('Did not load breakwaters from project')
 
-
-        if harbor_settings['representative_bedlevel']:
+        if harbor_settings['representative_bedlevel'] or harbor_settings['representative_bedlevel'] == 0.0:
             self.schematisation.set_bedlevel(harbor_settings['representative_bedlevel'])
 
         # Load databases
@@ -303,6 +299,7 @@ class HydraulicLoads(datamodels.ExtendedDataFrame):
         self.create_descriptions()
 
         # Create load combination names
+        self['Description'] = ''
         for idx in self.index:
             self.at[idx, 'Description'] = self.description_dict[idx]
 
@@ -393,7 +390,7 @@ class HydraulicLoads(datamodels.ExtendedDataFrame):
         from the collected set, only the breaks with more than one occurence are returned.
         """
         wlevs = []
-        for comb, group in self.groupby(['Wind direction', 'Wind speed']):
+        for _, group in self.groupby(['Wind direction', 'Wind speed']):
             if (group['Hs'] > 0).any():
                 hs, waterlevel = group[['Hs', self.wlevcol]].sort_values(by=self.wlevcol).drop_duplicates().values.T
                 wlevs.extend(self._get_breaks(waterlevel, hs, 4))
@@ -639,7 +636,7 @@ class HydraulicLoads(datamodels.ExtendedDataFrame):
         self.recalculated_loads.rename(columns={'h': 'Water level'}, inplace=True)
         
     def adapt_interpolated(self):
-        """Method to adapt interpolated loads as hydrauli loads
+        """Method to adapt interpolated loads as hydraulic loads
         """
         # Add interpolated loads
         self.settings['hydraulic_loads']['recalculate_waterlevels'] = True
@@ -757,6 +754,8 @@ class ModelUncertainties:
         # Remove wave direction, has no uncertainty
         if 'Wave direction' in unccols:
             unccols.remove('Wave direction')
+        if 'Storage situation VZM' in unccols:
+            unccols.remove('Storage situation VZM')
         # Add water level in case recalculated
         if self.mainmodel.project.settings['hydraulic_loads']['recalculate_waterlevels']:
             unccols.insert(0, 'h')
@@ -891,7 +890,7 @@ class Export:
             self.export_dataframe.dropna(inplace=True)
 
         # Retrieve locationnames
-        self.location_names = self.mainmodel.schematisation.result_locations['Naam'].values.tolist()
+        self.location_names = self.mainmodel.schematisation.result_locations['Naam'].tolist()
         self.export_dataframe['Naam'] = self.location_names
 
         # Generate export names
@@ -1116,7 +1115,7 @@ class Export:
             self.hrd_connections.append(io.database.HRDio(database))
 
         if self.settings['export']['export_HLCD_and_config']:
-            for database in self.export_dataframe['SQLite-database'].tolist():
+            for database in self.export_dataframe['SQLite-database'].unique():
                 self.config_connections.append(io.database.Configio(database.replace('.sqlite' , '.config.sqlite')))
             self.hlcd_connection = io.database.HLCDio(self.settings['export']['HLCD'])
 
@@ -1228,6 +1227,9 @@ class HarborSchematisation:
         self.breakwaters = datamodels.ExtendedGeoDataFrame(
             geotype=LineString, required_columns=['hoogte', 'alpha', 'beta', 'geometry'], required_types=[np.floating, np.floating, np.floating])
 
+        # transmission properties
+        self.breakwater_properties = {'height': [np.nan, np.nan], 'alpha': [np.nan, np.nan], 'beta': [np.nan, np.nan]}
+
         self.harborarea = datamodels.ExtendedGeoDataFrame(
             geotype=Polygon, required_columns=['hoogte', 'geometry'], required_types=[np.floating])
 
@@ -1237,13 +1239,13 @@ class HarborSchematisation:
         self.buffered_inner = None
         self.entrance = None
         self.area_union = None
+        self.bedlevel = None
 
         self.support_locations = datamodels.ExtendedGeoDataFrame(geotype=Point, required_columns=['HRDLocationId', 'Name', 'XCoordinate', 'YCoordinate', 'geometry'])
-        self.support_location = gpd.GeoSeries(index=['HRDLocationId', 'Name', 'XCoordinate', 'YCoordinate', 'geometry'])
+        self.support_location = pd.Series(index=['HRDLocationId', 'Name', 'XCoordinate', 'YCoordinate', 'geometry'], dtype='object')
 
         self.result_locations = datamodels.ExtendedGeoDataFrame(
             geotype=Point, columns=['Naam'], required_columns=['Normaal', 'geometry'], required_types=[(np.floating, np.integer)])
-
 
         self.settings = parent.project.settings
 
@@ -1288,6 +1290,14 @@ class HarborSchematisation:
         # Save path to project structure
         self.settings['schematisation']['breakwater_shape'] = path
 
+        # Although the transmission properties are to be filled out via the GUI, we attempt to load them from the shp for backward compatibility and user friendliness
+        try:
+            self.set_breakwater_heights(self.breakwaters['hoogte'].to_list())
+            self.set_breakwater_alphas(self.breakwaters['alpha'].to_list())
+            self.set_breakwater_betas(self.breakwaters['beta'].to_list())
+            logger.info('Loaded breakwater transmission coefficients from shp')
+        except:
+            logger.info('Failed at loading breakwater transmission coefficients from shp')
 
     def add_harborarea(self, path):
         """
@@ -1302,13 +1312,13 @@ class HarborSchematisation:
 
         # # Check if the parts do not overlap
         # if len(self.harborarea) > 1:
-        #     if not isinstance(_unary_union(self.harborarea['geometry'].values.tolist()), Polygon):
+        #     if not isinstance(_unary_union(self.harborarea['geometry'].tolist()), Polygon):
         #         raise ValueError("""Verschillende onderdelen van het haventerrein
         #                          vormen geen overlappend geheel. Zorg dat dit
         #                          wel het geval is""")
 
         # Check if all parts cross the flooddefence
-        #TODO: ZOEK EEN STABIELE OPLOSSING VOOR DE LOSSE HAVENELEMENTEN DIE WEL LOS MOGEN LIGGEN, MAAR
+        # TODO: ZOEK EEN STABIELE OPLOSSING VOOR DE LOSSE HAVENELEMENTEN DIE WEL LOS MOGEN LIGGEN, MAAR
         # DE GEOMETRIE NIET VERSTOREN
         # for area in self.harborarea.itertuples():
         #     if not self.flooddefence.intersects(area.geometry).any():
@@ -1318,14 +1328,13 @@ class HarborSchematisation:
         self.harborarea['prepgeo'] = [_prep(area['geometry']) for _, area in self.harborarea.iterrows()]
 
         # Calculate union of harbor area
-        self.area_union = unary_union(self.harborarea['geometry'].values.tolist())
+        self.area_union = unary_union(self.harborarea['geometry'].tolist())
 
         # Set simple method on 'not finished'
         self.settings['simple']['finished'] = False
 
         # Save path to project structure
         self.settings['schematisation']['harbor_area_shape'] = path
-
 
     def add_flooddefence(self, section_id, datadir=None):
         """
@@ -1349,7 +1358,7 @@ class HarborSchematisation:
         self.flooddefence.at[section_id, 'traject-id'] = section_id
         self.flooddefence.at[section_id, 'geometry'] = geometry
 
-    def check_entrance_coordinate(self, crd):
+    def set_entrance_coordinate(self, crd):
         """
         Set the entrance coordinate, in case of one breakwater
 
@@ -1359,27 +1368,186 @@ class HarborSchematisation:
             Entrance coordinate which together with the breakwater head
             spans the entrance
         """
-        if not np.size(self.breakwaters):
-            raise AttributeError('Havendammen zijn nog niet ingeladen. Laad deze eerst in.')
 
-        elif np.size(self.breakwaters) == 2:
-            raise AttributeError('Er zijn twee havendammen aanwezig. Het is niet mogelijk een extra punt voor de hanveningang op te geven.')
+        valid = self.check_entrance_coordinate(crd)
+        if valid:
+            self.mainmodel.project.settings["schematisation"]["entrance_coordinate"] = crd
+            self.entrance = crd
+
+        # Set simple method on 'not finished'
+        self.settings['simple']['finished'] = False
+
+
+    def check_entrance_coordinate(self, crd):
+        """
+        Check the entrance coordinate, in case of one breakwater
+
+        Parameters
+        ----------
+        crd : tuple
+            Entrance coordinate which together with the breakwater head
+            spans the entrance
+        """
 
         # Check the input types
         if not isinstance(crd, tuple):
             raise ValueError('Expected tuple.')
         for i in [0, 1]:
-            if not isinstance(crd[i], (int, np.int, float, np.float)):
+            if not isinstance(crd[i], (int, np.integer, float, np.floating)):
                 raise ValueError('Expected integer of float inside the tuple: {}'.format(crd))
 
+        # Check if only one breakwater is present
+        if len(self.breakwaters) == 2:
+            valid = False        
         # Check if the entrance coordinate is inside the harbor area
-        if not self.harborarea.contains(Point(crd)).any():
+        elif not self.harborarea.contains(Point(crd)).any():
             valid = False
         else:
             valid = True
 
         return valid
+    
+    def set_breakwater_heights(self, heights):
+        """
+        Set the breakwater heights and check if valid
 
+        Parameters
+        ----------
+        heights : list of floats
+            Heights of the breakwaters
+
+        """
+
+        valid = self.check_breakwater_heights(heights)
+
+        if valid:
+            self.breakwater_properties['height'] = heights
+            self.mainmodel.project.settings["schematisation"]["breakwater_properties"]['height'] = heights
+
+        # Set simple method on 'not finished'
+        self.settings['simple']['finished'] = False
+
+    def check_breakwater_heights(self, heights):
+        """
+        Check the breakwater heights
+
+        Parameters
+        ----------
+        heights : list of floats
+            Heights of the breakwaters
+        """
+
+        if not np.size(self.breakwaters):
+            raise AttributeError('Havendammen zijn nog niet ingeladen. Laad deze eerst in.')
+        
+        if len(self.breakwaters) != len(heights):
+            raise ValueError('Het aantal hoogtes is niet gelijk aan het aantal havendammen')
+
+        for i,_ in self.breakwaters.iterrows():
+            # Check the input types
+            if not isinstance(heights[i], float):
+                raise ValueError('Expected float.')
+
+        valid = True
+
+        return valid
+    
+    def set_breakwater_alphas(self, alphas):
+        """
+        Set the breakwater alphas and check if valid
+
+        Parameters
+        ----------
+        alphas : list of floats
+            Alpha coefficients of breakwaters transmission according to Goda, 1967
+        """
+
+        valid = self.check_breakwater_alphas(alphas)
+
+        if valid:
+            self.breakwater_properties['alpha'] = alphas
+            self.mainmodel.project.settings["schematisation"]["breakwater_properties"]['alpha'] = alphas
+
+        # Set simple method on 'not finished'
+        self.settings['simple']['finished'] = False
+
+    def check_breakwater_alphas(self, alphas):
+        """
+        Check the breakwater transmission parameter alpha
+
+        Parameters
+        ----------
+        alphas : list of floats
+            Alpha coefficients of breakwaters transmission according to Goda, 1967
+        """
+
+        if not np.size(self.breakwaters):
+            raise AttributeError('Havendammen zijn nog niet ingeladen. Laad deze eerst in.')
+
+        if len(self.breakwaters) != len(alphas):
+            raise ValueError('Het aantal alphas is niet gelijk aan het aantal havendammen')
+
+        valid = True
+        for i,_ in self.breakwaters.iterrows():
+            # Check the input types
+            if not isinstance(alphas[i], float):
+                raise ValueError('Expected float.')
+            
+            # Check if the value is in the expected range
+            if alphas[i] < 1. or alphas[i] > 3.:
+                valid = False
+                # raise ValueError('Expected alpha between 1.0 and 3.0')
+
+        return valid
+    
+    def set_breakwater_betas(self, betas):
+        """
+        Set the breakwater betas and check if valid
+
+        Parameters
+        ----------
+        betas : list of floats
+            Beta coefficients of breakwaters transmission according to Goda, 1967
+        """
+
+        valid = self.check_breakwater_betas(betas)
+
+        if valid:
+            self.breakwater_properties['beta'] = betas
+            self.mainmodel.project.settings["schematisation"]["breakwater_properties"]['beta'] = betas
+
+        # Set simple method on 'not finished'
+        self.settings['simple']['finished'] = False
+
+    def check_breakwater_betas(self, betas):
+        """
+        Check the breakwater transmission parameter beta
+
+        Parameters
+        ----------
+        betas : list of floats
+            Beta coefficients of breakwaters transmission according to Goda, 1967
+        """
+
+        if not np.size(self.breakwaters):
+            raise AttributeError('Havendammen zijn nog niet ingeladen. Laad deze eerst in.')
+
+        if len(self.breakwaters) != len(betas):
+            raise ValueError('Het aantal betas is niet gelijk aan het aantal havendammen')
+
+        valid = True
+        for i,_ in self.breakwaters.iterrows():
+            # Check the input types
+            if not isinstance(betas[i], float):
+                raise ValueError('Expected float.')
+            
+            # Check if the value is in the expected range
+            if betas[i] < 0. or betas[i] > 1.:
+                valid = False
+                # raise ValueError('Expected beta between 0.0 and 1.0')
+        
+        return valid
+    
     def del_flooddefence(self, section_id):
         """
         Remove flood defence geometry from schematisation
@@ -1474,7 +1642,7 @@ class HarborSchematisation:
         if self.support_locations.empty:
             raise AttributeError('HRD-locaties moeten ingeladen zijn voordat er een streunpuntlocatie gekozen kan worden.')
 
-        if name not in self.support_locations['Name'].values.tolist():
+        if name not in self.support_locations['Name'].tolist():
             raise ValueError('Naam van de steunpuntlocatie ("{}") komt niet voor in de HRD ({})'.format(name, self.mainmodel.project.settings['hydraulic_loads']['HRD']))
 
         self.support_location.loc[:] = self.support_locations.loc[self.support_locations['Name'].eq(name)].iloc[0]
@@ -1523,6 +1691,7 @@ class HarborSchematisation:
         valid = self.check_bedlevel(bedlevel)
 
         if valid:
+            self.bedlevel = bedlevel
             self.settings['schematisation']['representative_bedlevel'] = bedlevel
 
         # Set simple method on 'not finished'
@@ -1541,7 +1710,12 @@ class HarborSchematisation:
         if not np.size(self.harborarea):
             raise ValueError('Haventerrein is nog niet ingeladen. Doe dit voor het opgeven van het bodemniveau.')
 
+        if not np.size(self.breakwaters):
+            raise AttributeError('Havendammen zijn nog niet ingeladen. Laad deze eerst in.')
+
         if bedlevel > self.harborarea['hoogte'].min():
+            return False
+        elif any([bedlevel > x for x in self.breakwater_properties['height'] if isinstance(x,float) and not np.isnan(x)]):
             return False
         else:
             return True
@@ -1643,6 +1817,7 @@ class HarborSchematisation:
             location_count[section['traject-id']] = 0
 
         # For each flood defence
+        totalpts = []
         for sectiongeo, sectionid in zip(sections, section_ids):
             # First determine on which side of the section the points should be
             # generated
@@ -1658,7 +1833,7 @@ class HarborSchematisation:
             # Now generate point along the flood defence
             #-------------------------------------------------------------
 
-            if isinstance(distance, (float, int, np.int, np.float)):
+            if isinstance(distance, (float, int, np.integer, np.floating)):
                 iterations = [side, 'left' if side == 'right' else 'right']
             else:
                 # If a line is given, only check the line
@@ -1666,7 +1841,7 @@ class HarborSchematisation:
 
             # For both iterations
             for side in iterations:
-                if isinstance(distance, (float, int, np.int, np.float)):
+                if isinstance(distance, (float, int, np.integer, np.floating)):
                     # if scalar, generate line
                     parallel = sectiongeo.parallel_offset(distance, side=side)
                     maxdist = distance * 1.5
@@ -1701,11 +1876,15 @@ class HarborSchematisation:
             # Generate names
             points['Naam'] = ['{}_{:05d}'.format(sectionid, i) for i in np.arange(len(points)) + location_count[sectionid] + 1]
 
-            # Add to existing dataframe
-            self.result_locations.set_data(points)
-            
+            # Add to list
+            totalpts.append(points)
+                        
             # Add location count for generating names when sections have multiple line segments
             location_count[sectionid] += len(points)
+
+        # Add to existing dataframe
+        self.result_locations.delete_all()
+        self.result_locations.set_data(pd.concat(totalpts))
 
         if self.result_locations.empty:
             raise ValueError('No result locations where generated. Check your harbor schematisation')
@@ -1801,15 +1980,15 @@ class HarborSchematisation:
         # 1.  Determine harbor entrance
         # Generate line trough harbor entrance
         if len(self.breakwaters) == 2:
-            pt1, pt2 = self.breakwaters['breakwaterhead'].values.tolist()
+            pt1, pt2 = self.breakwaters['breakwaterhead'].tolist()
 
         elif len(self.breakwaters) == 1:
             breakwater = self.breakwaters.iloc[0]
             # The first point is the breakwaterhead
             pt1 = breakwater['breakwaterhead']
-            if not hasattr(self, 'entrance_coordinate'):
+            if not hasattr(self, 'entrance'):
                 raise ValueError('Extra entrance coordinate is not known.')
-            pt2 = self.entrance_coordinate
+            pt2 = self.entrance
 
         # Create entrance as linestring
         self.entrance = LineString([pt1, pt2])
@@ -1825,7 +2004,7 @@ class HarborSchematisation:
         if isinstance(self.area_union, Polygon):
             area_exteriors = [self.area_union.exterior]
         elif isinstance(self.area_union, MultiPolygon):
-            area_exteriors = [area.exterior for area in self.area_union]
+            area_exteriors = [area.exterior for area in self.area_union.geoms]
 
         # Get the snapped flood defence line
         # Convert to lists of linestrings
@@ -1834,7 +2013,7 @@ class HarborSchematisation:
             # Break rings if present
             if geo.is_ring:
                 crds = np.vstack(geo.coords[:])
-                dists = np.hypot(*(crds - np.array(self.entrance.centroid)[None, :]).T)
+                dists = [self.entrance.centroid.distance(Point(point)) for point in geo.coords]
                 flooddefencegeos[i] = geometry.as_linestring_list(geo.difference(Point(*crds[np.argmax(dists)]).buffer(1.0)))            
 
         # Get coordinates
@@ -1844,7 +2023,7 @@ class HarborSchematisation:
         snapped_fd_lines = [LineString(line) for line in geometry.snap_flooddefence_lines(
             lines=flooddefencegeos, max_snap_dist=self.settings['schematisation']['fd_snap_distance'])]
 
-        lines = [self.entrance.buffer(0.01).exterior] + area_exteriors + self.breakwaters['geometry'].values.tolist() + snapped_fd_lines
+        lines = [self.entrance.buffer(0.01).exterior] + area_exteriors + self.breakwaters['geometry'].tolist() + snapped_fd_lines
 
         # 3.  Get inner polygon from lines
         polygons = [p for p in polygonize(unary_union(linemerge(lines)))]
@@ -1902,27 +2081,39 @@ class HarborSchematisation:
         ax.set_aspect(1.0)
 
         # plot harbor area
-        self.harborarea.plot(ax=ax, zorder=2, alpha=0.5)
+        ax.add_patch(PolygonPatch(self.inner, facecolor='0.90', edgecolor=None, zorder=1, alpha=0.5, label='Havenbassin'))
+        ax.add_patch(PolygonPatch(self.harborarea.geometry[0], facecolor='C0', edgecolor=None, zorder=2, alpha=0.5, label='Haven terrein'))
+        if len(self.harborarea.geometry) > 1:
+            for geom in self.harborarea.geometry[1:]:
+                ax.add_patch(PolygonPatch(geom, facecolor='C0', edgecolor=None, zorder=2, alpha=0.5))
 
         # Plot breakwaters. Add row id at head
         for breakwater in self.breakwaters.itertuples():
-            ax.plot(*breakwater.geometry.xy, color='C1')
+            if breakwater.Index == 0:
+                ax.plot(*breakwater.geometry.xy, color='C1', label='Golfbreker')
+            else:
+                ax.plot(*breakwater.geometry.xy, color='C1')
             ax.text(*breakwater.breakwaterhead.coords[0], breakwater.Index)
-
-        if locations:
-            # Plot result locations with names
-            self.result_locations.plot(ax=ax, color='k', marker='.', zorder=10)
-            for _, loc in self.result_locations.iterrows():
-                ax.text(loc['geometry'].coords[0][0], loc['geometry'].coords[0][1], loc['Naam'])
+            ax.plot(*np.vstack(self.entrance.coords[:]).T, lw=1.5, color='0.1', dashes=(2,2), alpha=1.0)
 
         # Set limits
         xlim = ax.get_xlim()
-        ax.set_xlim(xmin=xlim[0] - buffer, xmax=xlim[1] + buffer)
+        ax.set_xlim(xmin=min(self.support_location.XCoordinate,xlim[0]) - buffer, xmax=max(self.support_location.XCoordinate,xlim[1]) + buffer)
         ylim = ax.get_ylim()
-        ax.set_ylim(ymin=ylim[0] - buffer, ymax=ylim[1] + buffer)
+        ax.set_ylim(ymin=min(self.support_location.YCoordinate,ylim[0]) - buffer, ymax=max(self.support_location.YCoordinate,ylim[1]) + buffer)
+
+        if locations:
+            # Plot result locations with names
+            self.result_locations.plot(ax=ax, color='k', marker='.', zorder=10, label='Uitvoerlocaties')
+            for _, loc in self.result_locations.iterrows():
+                ax.text(loc['geometry'].coords[0][0], loc['geometry'].coords[0][1], loc['Naam'])
+
+            self.support_locations.plot(ax=ax, color='k', marker='x', zorder=10, label='Steunpuntlocatie')
+            ax.plot(self.support_location.XCoordinate, self.support_location.YCoordinate, markeredgecolor='k', marker='x', zorder=10)
+            ax.text(self.support_location.XCoordinate, self.support_location.YCoordinate, '    ' + self.support_location.Name, color='k', zorder=10)
 
         # Plot flood defence
-        self.flooddefence.plot(ax=ax, color='C3')
+        self.flooddefence.plot(ax=ax, color='C3', label='Normtraject')
 
         # Mark harbor inner area
         ax.add_patch(PolygonPatch(self.inner, color='0.90'))
@@ -2045,13 +2236,9 @@ class InterpolationTable:
         Kd : float
             Diffraction coefficient
         """
-        #TODO: Treat boundaries
+        # TODO: Treat boundaries
 
         return self.f(X / Lr, Y / Lr)[0]
-        # Interpolate over first axis
-#        Yvals = [np.interp(X/Lr, self.XL, row) for row in self.values]
-        # Interpolate over second axis
-#        Kd = np.interp(Y/Lr, self.YL, Yvals)
 
 class Project():
     """
@@ -2092,10 +2279,15 @@ class Project():
             'schematisation': {
                 'harbor_area_shape': '',
                 'breakwater_shape': '',
+                'breakwater_properties': {
+                    'height': [np.nan, np.nan],
+                    'alpha': [np.nan, np.nan],
+                    'beta': [np.nan, np.nan],
+                },
                 'entrance_coordinate': '',
                 'flooddefence_ids': [],
                 'fd_snap_distance': 10,
-                'representative_bedlevel' : '',
+                'representative_bedlevel' : np.nan,
                 'support_location_name': '',
                 'result_locations_shape': '',
             },

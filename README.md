@@ -1,14 +1,10 @@
-# Versies en aanpassingen
-
-Dit is versie 2.0, de eerste gedistribueerde versie.
-
 # Doel
 
-In de databases met hydraulische belastingen data bij Ringtoets/Riskeer zijn doorgaans geen locaties opgenomen nabij waterkeringen die binnen een havenbekken liggen. HB Havens ondersteunt het genereren van databases waarin dergelijke uitvoerlocaties wel zijn opgenomen. Daarbij worden hydraulische belastingen data van locaties buiten het havenbekken getransformeerd naar de nieuwe locaties binnen het havenbekken.
+In de databases met hydraulische belastingen data bij Riskeer zijn doorgaans geen locaties opgenomen nabij waterkeringen die binnen een havenbekken liggen. HB Havens ondersteunt het genereren van databases waarin dergelijke uitvoerlocaties wel zijn opgenomen. Daarbij worden hydraulische belastingen data van locaties buiten het havenbekken getransformeerd naar de nieuwe locaties binnen het havenbekken.
 
 # Installer
 
-De applicatie bestaat uit python scripts met data. Er is geen installer. 
+De applicatie bestaat uit python scripts met data. Er is geen installer. In de gebruikershandleiding staan aanwijzingen voor het installeren van HB Havens.
 
 # Gebruik en functionaliteit
 
@@ -24,16 +20,18 @@ Binnen de geavanceerde golftransformatiemethode wordt gebruik gemaakt van de mod
 * het klaarzetten van de invoerbestanden (de bestanden met verschillende waterstanden en golfcondities als randvoorwaarden)
 * het inlezen en verwerken van de rekenresultaten.
 
+# Versies en aanpassingen
+
+De actuele versie is 23.1.1 en dateert van december 2023.
+De belangrijkste aanpassing ten opzichte van de vorige release (versie 2.0, uit september 2019) betreft het updaten van gebruikte Python packages.
+
 # Technische informatie
 
 Voor de benodigde Python versie en Python packages wordt verwezen naar de gebruikershandleiding.
 
 # Achtergrondinformatie
 
-Betreft versie 2.0, uit september 2019.
-
 De tool is in opdracht van Rijkswaterstaat-WVL ontwikkeld door HKV Lijn in Water en Aktis Hydraulics. De tool wordt voor Rijkswaterstaat beheerd in een Deltares (Subversion) repository, waar ook een testbank aanwezig is. Voor onderhoud en doorontwikkeling van de tool wordt deze laatstgenoemde repository gebruikt; de GitHub (Git) repository wordt alleen gebruikt voor de beschikbaarstelling van de tool. Neem in geval van behoefte aan onderhoud of doorontwikkeling s.v.p. contact op met ondergenoemde contactpersoon.
-
 
 # Contactpersoon
 

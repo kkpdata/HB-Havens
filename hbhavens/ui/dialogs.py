@@ -1,19 +1,12 @@
-import os
-
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
+# Toegevoegd Svasek 31/10/2018 - Ander gebruik van figure, waardoor er in Spyder geen extra figuur opent
+from matplotlib.figure import Figure
 from PyQt5 import Qt, QtCore, QtGui, QtWidgets
 
 from hbhavens import io
 from hbhavens.ui import widgets
-from hbhavens.core import geometry
-
-# Toegevoegd Svasek 31/10/2018 - Ander gebruik van figure, waardoor er in Spyder geen extra figuur opent
-from matplotlib.figure import Figure
-
-
 
 class GetPharosParametersDialog(QtWidgets.QDialog):
     """
@@ -37,7 +30,7 @@ class GetPharosParametersDialog(QtWidgets.QDialog):
 
         self.succeeded = False
 
-        self.harbor_bedlevel = self.settings['schematisation']['representative_bedlevel']
+        self.harbor_bedlevel = self.schematisation.bedlevel
 
         self.waterlevels = parent.hydraulic_loads[parent.hydraulic_loads.wlevcol].unique().tolist()
         
@@ -291,7 +284,7 @@ class GetPharosParametersDialog(QtWidgets.QDialog):
         if isinstance(val, list):
             return valid
 
-        if isinstance(val, (float, int, np.int, np.float)):
+        if isinstance(val, (float, int, np.integer, np.floating)):
             if np.isnan(val):
                 valid = False
         if (val is None) or (val == ''):
@@ -439,8 +432,7 @@ class ChooseFloodDefenceWindow(QtWidgets.QDialog):
         hlayout.addWidget(label)
 
         self.section_combobox = QtWidgets.QComboBox()
-        self.section_combobox.setFixedWidth(60)
-        self.section_ids = sorted([''] + io.geometry.import_section_ids(self.datadir))
+        self.section_ids = sorted([''] + [x.split('-')[0].zfill(2) + '-' + x.split('-')[1] if '-' in x else x for x in io.geometry.import_section_ids(self.datadir)])
         self.section_combobox.addItems(self.section_ids)
 
         hlayout.addWidget(self.section_combobox)
@@ -502,7 +494,6 @@ class RemoveFloodDefenceWindow(QtWidgets.QDialog):
         hlayout.addWidget(QtWidgets.QLabel('Kies een normtraject:'))
 
         self.section_combobox = QtWidgets.QComboBox()
-        self.section_combobox.setFixedWidth(60)
         self._update_combobox()
 
         hlayout.addWidget(self.section_combobox)
@@ -556,21 +547,37 @@ class RemoveFloodDefenceWindow(QtWidgets.QDialog):
 class NotificationDialog(QtWidgets.QMessageBox):
 
     def __init__(self, text, severity='information', details=''):
+        """
+        Create a notification dialog with a given text, severity level
+        and if needed some details.
+        
+        Parameters
+        ----------
+        text : str
+            Message text
+        severity : str, optional
+            Severity level, warning, critical or information (default) 
+        details : str, optional
+            Optional details, by default ''
+        """
 
         super().__init__()
 
         self.setText(text)
 
         if severity == 'warning':
-            self.setIcon(QtWidgets.QMessageBox.Warning)
+            icon = self.style().standardIcon(QtWidgets.QStyle.SP_MessageBoxWarning)
             self.setWindowTitle("Waarschuwing")
         elif severity == 'critical':
-            self.setIcon(QtWidgets.QMessageBox.Critical)
+            icon = self.style().standardIcon(QtWidgets.QStyle.SP_MessageBoxCritical)
             self.setWindowTitle("Foutmelding")
         elif severity == 'information':
-            self.setIcon(QtWidgets.QMessageBox.Information)
+            icon = self.style().standardIcon(QtWidgets.QStyle.SP_MessageBoxInformation)
             self.setWindowTitle("Mededeling")
 
+        self.setIconPixmap(icon.pixmap(icon.actualSize(QtCore.QSize(36, 36))))
+
+        # self.setWindowIcon(get_icon())
 
         if details:
             self.setDetailedText("Details:\n{}".format(details))
@@ -580,6 +587,19 @@ class NotificationDialog(QtWidgets.QMessageBox):
 
         self.exec_()
 
+    def resizeEvent(self, event):
+        """
+        Method called when the details are opened, and the window is enlarged.
+        """
+
+        result = super(NotificationDialog, self).resizeEvent(event)
+
+        details_box = self.findChild(QtWidgets.QTextEdit)
+        # 'is not' is better style than '!=' for None
+        if details_box is not None:
+            details_box.setFixedSize(500, 250)
+
+        return result
 
 def show_dialog(text, severity='information', details=''):
     msg = QtWidgets.QMessageBox()
@@ -758,7 +778,7 @@ class GetSwanParametersDialog(QtWidgets.QDialog):
         if isinstance(val, list):
             return valid
 
-        if isinstance(val, (float, int, np.int, np.float)):
+        if isinstance(val, (float, int, np.integer, np.floating)):
             if np.isnan(val):
                 valid = False
         if (val is None) or (val == ''):
@@ -987,7 +1007,7 @@ class GetHaresFolderDialog(QtWidgets.QDialog):
         if isinstance(val, list):
             return valid
 
-        if isinstance(val, (float, int, np.int, np.float)):
+        if isinstance(val, (float, int, np.integer, np.floating)):
             if np.isnan(val):
                 valid = False
         if (val is None) or (val == ''):
@@ -1223,7 +1243,7 @@ class DefineUncertaintiesDialog(QtWidgets.QDialog):
         self.harbor_unc = self.modeluncertainties.harbor_unc
         self.combined_unc = self.modeluncertainties.combined_unc
 
-        self.location_names = self.modeluncertainties.table['Naam'].values.tolist()
+        self.location_names = self.modeluncertainties.table['Naam'].tolist()
         self.parent = parent
         self._initUI()
 
@@ -1368,7 +1388,7 @@ class ResultScatterDialog(QtWidgets.QDialog):
 
         self.modelunctab = modelunctab
         self.result_locations_df = self.modelunctab.mainmodel.schematisation.result_locations
-        self.result_locations = self.result_locations_df['Naam'].values.tolist()
+        self.result_locations = self.result_locations_df['Naam'].tolist()
         self.hydraulic_loads = self.modelunctab.mainmodel.hydraulic_loads
 
         # Get results from parent
@@ -1631,8 +1651,8 @@ class DefineExportNameAndDatabase(QtWidgets.QDialog):
         """
         # Get selected names (index)
         idx = self.table.where(self.table['Naam'] == self.name).dropna(how='all').index.values[0]
-        self.table.set_value(idx, 'Exportnaam', self.exportname.LineEdit.text())
-        self.table.set_value(idx, 'SQLite database', self.exportpath.LineEdit.text())
+        self.table.at[idx, 'Exportnaam'] = self.exportname.LineEdit.text()
+        self.table.at[idx, 'SQLite database'] = self.exportpath.LineEdit.text()
         self.close()
 
 class QuestionDialog(Qt.QDialog):

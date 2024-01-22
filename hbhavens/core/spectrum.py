@@ -1,7 +1,4 @@
 import numpy as np
-import pandas as pd
-
-from scipy.interpolate import interp1d
 
 import logging
 logger = logging.getLogger(__name__)
@@ -337,7 +334,7 @@ class JONSWAPSpectrum:
     
         from math import gamma
     
-        theta = np.asarray(self.theta, dtype=np.float)
+        theta = np.asarray(self.theta, dtype=np.float32)
 
         # convert units radians
         if units.lower().startswith('deg'):
@@ -708,7 +705,7 @@ def incoming_wave_factors(directions, dike_normal):
         Angle in degrees of the dike normal
     """
     # Convert float or int to array is necessary
-    if isinstance(dike_normal, (float, int, np.float, np.int)):
+    if isinstance(dike_normal, (float, int, np.floating, np.integer)):
         dike_normal = np.array([dike_normal])
 
     # Initialize empty array for factors

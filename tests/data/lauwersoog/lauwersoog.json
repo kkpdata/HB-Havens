@@ -1,0 +1,173 @@
+{
+  "project": {
+    "software": {
+      "name": "HB Havens",
+      "version": "2.0",
+      "date": "september 2019"
+    },
+    "name": "lauwersoog",
+    "user": {
+      "name": "Matthijs B\u00e9nit",
+      "email": "benit@hkv.nl"
+    },
+    "created": {
+      "date": "29-Aug-2023",
+      "time": "20:01:37"
+    },
+    "last_modified": {
+      "date": "29-Aug-2023",
+      "time": "20:01:42"
+    },
+    "progress": 0
+  },
+  "schematisation": {
+    "harbor_area_shape": "tests\\data\\lauwersoog\\shapes\\haventerrein.shp",
+    "breakwater_shape": "tests\\data\\lauwersoog\\shapes\\havendam.shp",
+    "breakwater_heights": [],
+    "entrance_coordinate": "",
+    "flooddefence_ids": [
+      "6-5"
+    ],
+    "fd_snap_distance": 10,
+    "representative_bedlevel": -10.0,
+    "support_location_name": "WZ_3_ha04-00009",
+    "result_locations_shape": "tests\\data\\lauwersoog\\shapes\\uitvoerlocaties.shp"
+  },
+  "hydraulic_loads": {
+    "HRD": "tests\\data\\lauwersoog\\databases\\WBI2017_Lauwersoog_steunpunt.sqlite",
+    "recalculate_waterlevels": false,
+    "recalculate_method": "regression",
+    "waterlevels": []
+  },
+  "calculation_method": {
+    "method": "simple",
+    "condition_geometry": true,
+    "condition_reflection": false,
+    "condition_flow": false,
+    "motivation": "",
+    "include_pharos": true,
+    "include_hares": false
+  },
+  "simple": {
+    "finished": true,
+    "processes": [
+      "Diffractie",
+      "Transmissie",
+      "Lokale golfgroei"
+    ]
+  },
+  "swan": {
+    "mastertemplate": "",
+    "depthfile": "",
+    "swanfolder": "",
+    "factor Tm Tp": 1.1,
+    "use_incoming_wave_factors": true,
+    "calculations": {
+      "I1": {
+        "folder": "",
+        "input_generated": false
+      },
+      "I2": {
+        "folder": "",
+        "input_generated": false
+      },
+      "I3": {
+        "folder": "",
+        "input_generated": false
+      },
+      "D": {
+        "folder": "",
+        "input_generated": false
+      },
+      "TR": {
+        "folder": "",
+        "input_generated": false
+      },
+      "W": {
+        "folder": "",
+        "input_generated": false
+      }
+    }
+  },
+  "pharos": {
+    "initialized": false,
+    "input_generated": false,
+    "use_incoming_wave_factors": true,
+    "hydraulic loads": {
+      "factor Tm Tp": 1.1,
+      "water depth for wave length": NaN
+    },
+    "wave directions": {
+      "lowest": 0,
+      "highest": 360,
+      "bin size": 5
+    },
+    "frequencies": {
+      "lowest": NaN,
+      "highest": NaN,
+      "number of bins": 20,
+      "scale": "lineair",
+      "checked": []
+    },
+    "2d wave spectrum": {
+      "spread": 10.0,
+      "gamma": 3.3,
+      "min energy": 0.01
+    },
+    "paths": {
+      "pharos folder": "",
+      "schematisation folder": ""
+    },
+    "water levels": {
+      "checked": []
+    },
+    "transformation": {
+      "dx": NaN,
+      "dy": NaN
+    },
+    "schematisations": {}
+  },
+  "hares": {
+    "initialized": true,
+    "input_generated": true,
+    "use_incoming_wave_factors": true,
+    "hydraulic loads": {
+      "factor Tm Tp": 1.1,
+      "water depth for wave length": NaN
+    },
+    "wave directions": {
+      "lowest": 0,
+      "highest": 360,
+      "bin size": 5
+    },
+    "frequencies": {
+      "lowest": NaN,
+      "highest": NaN,
+      "number of bins": 20,
+      "scale": "lineair",
+      "checked": []
+    },
+    "2d wave spectrum": {
+      "spread": 10.0,
+      "gamma": 3.3,
+      "min energy": 0.01
+    },
+    "paths": {
+      "hares folder": "",
+      "schematisation folder": ""
+    },
+    "water levels": {
+      "checked": []
+    },
+    "transformation": {
+      "dx": NaN,
+      "dy": NaN
+    },
+    "schematisations": {}
+  },
+  "export": {
+    "export_HLCD_and_config": false,
+    "HLCD": "",
+    "export_succeeded": true
+  }
+}

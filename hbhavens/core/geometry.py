@@ -10,7 +10,7 @@ import geopandas as gpd
 import numpy as np
 from scipy.interpolate import interp1d
 from shapely.geometry import LineString, MultiLineString, MultiPolygon, Point, Polygon
-from shapely.ops import polygonize as _polygonizeprep
+from shapely.ops import polygonize
 
 
 def is_left(pt, linecoords):
@@ -32,12 +32,7 @@ def is_left(pt, linecoords):
 
     A, B = linecoords
     # Determine if the point is located left or right of the line
-    sign = ((B[0] - A[0]) * (pt[:, 1] - A[1])) - ((B[1] - A[1]) * (pt[:, 0] - A[0]))
-
-    # Make outputarray as False
-    left = np.zeros(len(pt), dtype=bool)
-    # Set left points to true
-    left[np.where(sign > 0)] = True
+    left = ((B[0] - A[0]) * (pt[:, 1] - A[1])) - ((B[1] - A[1]) * (pt[:, 0] - A[0])) > 0
 
     if input_0d:
         left = left[0]
@@ -132,7 +127,7 @@ def extend_point_to_linestring(pt, direction, extend, as_LineString=False):
     if as_LineString:
         lines = [LineString(line) for line in lines]
 
-    if isinstance(direction, (np.int, np.float, float, int)):
+    if isinstance(direction, (np.integer, np.floating, float, int)):
         lines = lines[0]
 
     return lines
@@ -179,7 +174,7 @@ def calculate_angle(a, b, c):
     bc = np.hypot(*(b-c).T)
 
     frac = (ba**2 + bc**2 - ac ** 2) / (2 * ba * bc)
-    if isinstance(frac, (float, np.float)):
+    if isinstance(frac, (float, np.floating)):
         frac = np.array([frac])
 
     ind = np.isclose(frac, 1.0)
@@ -306,7 +301,7 @@ def polygonize_intersecting_lines(lines, round_decimals=None):
         splitted_lines = [line.round(round_decimals) for line in splitted_lines]
 
 
-    polygons = [p for p in _polygonize(splitted_lines)]
+    polygons = [p for p in polygonize(splitted_lines)]
 
     return polygons
 
@@ -396,7 +391,7 @@ def snap_flooddefence_lines(lines, max_snap_dist=np.inf):
 
     """
     # Make copy of lines to modify
-    newlines = np.copy(lines)
+    newlines = lines[:]
 
     # Collect start and end points of lines
     headpoints = np.vstack([line[[0, -1], :] for line in lines])
@@ -427,7 +422,7 @@ def snap_flooddefence_lines(lines, max_snap_dist=np.inf):
     # Aangepast Svasek 05/10/18 - Printen van de startindex is overbodig
 #    print(startindex)
 
-    for _ in range(np.size(lines, 0) - 1):
+    for _ in range(len(lines)-1):
         # Determine other point of line
         endindex = other_index(startindex)
 
@@ -637,7 +632,7 @@ def as_linestring_list(linestring):
     if isinstance(linestring, LineString):
         return [linestring]
     elif isinstance(linestring, MultiLineString):
-        return [l for l in linestring]
+        return [l for l in linestring.geoms]
     elif isinstance(linestring, list):
         lst = []
         for item in linestring:

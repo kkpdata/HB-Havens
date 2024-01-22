@@ -1,0 +1,187 @@
+{
+  "project": {
+    "software": {
+      "name": "HB Havens",
+      "version": "2.0",
+      "date": "september 2019"
+    },
+    "name": "PR4982.10",
+    "user": {
+      "name": "Matthijs Benit",
+      "email": "benit@hkv.nl"
+    },
+    "created": {
+      "date": "24-Jul-2023",
+      "time": "13:58:11"
+    },
+    "last_modified": {
+      "date": "28-Sep-2023",
+      "time": "10:36:52"
+    },
+    "progress": 7
+  },
+  "schematisation": {
+    "harbor_area_shape": "tests/data/urk/shapes/haventerrein.shp",
+    "breakwater_shape": "tests/data/urk/shapes/havendammen.shp",
+    "entrance_coordinate": "",
+    "flooddefence_ids": [
+      "7-2"
+    ],
+    "fd_snap_distance": 10,
+    "representative_bedlevel": -5.0,
+    "support_location_name": "YM_3_7-2_ha02_00001",
+    "result_locations_shape": "tests/data/urk/shapes/uitvoerlocaties.shp",
+    "breakwater": {
+      "height": [
+        3.0,
+        2.5
+      ],
+      "alpha": [
+        1.0,
+        1.0
+      ],
+      "beta": [
+        0.1,
+        0.1
+      ]
+    }
+  },
+  "hydraulic_loads": {
+    "HRD": "tests/data/urk/databases/WBI2017_IJsselmeer_7-2_v02_steunpunt.sqlite",
+    "recalculate_waterlevels": false,
+    "recalculate_method": "regression",
+    "waterlevels": []
+  },
+  "calculation_method": {
+    "method": "simple",
+    "condition_geometry": true,
+    "condition_reflection": false,
+    "condition_flow": false,
+    "motivation": "",
+    "include_pharos": true,
+    "include_hares": false
+  },
+  "simple": {
+    "finished": true,
+    "processes": [
+      "Diffractie",
+      "Transmissie",
+      "Lokale golfgroei",
+      "Golfbreking"
+    ]
+  },
+  "swan": {
+    "mastertemplate": "",
+    "depthfile": "",
+    "swanfolder": "",
+    "factor Tm Tp": 1.1,
+    "use_incoming_wave_factors": true,
+    "calculations": {
+      "I1": {
+        "folder": "",
+        "input_generated": false
+      },
+      "I2": {
+        "folder": "",
+        "input_generated": false
+      },
+      "I3": {
+        "folder": "",
+        "input_generated": false
+      },
+      "D": {
+        "folder": "",
+        "input_generated": false
+      },
+      "TR": {
+        "folder": "",
+        "input_generated": false
+      },
+      "W": {
+        "folder": "",
+        "input_generated": false
+      }
+    }
+  },
+  "pharos": {
+    "initialized": false,
+    "input_generated": false,
+    "use_incoming_wave_factors": true,
+    "hydraulic loads": {
+      "factor Tm Tp": 1.1,
+      "water depth for wave length": NaN
+    },
+    "wave directions": {
+      "lowest": 0,
+      "highest": 360,
+      "bin size": 5
+    },
+    "frequencies": {
+      "lowest": NaN,
+      "highest": NaN,
+      "number of bins": 20,
+      "scale": "lineair",
+      "checked": []
+    },
+    "2d wave spectrum": {
+      "spread": 10.0,
+      "gamma": 3.3,
+      "min energy": 0.01
+    },
+    "paths": {
+      "pharos folder": "",
+      "schematisation folder": ""
+    },
+    "water levels": {
+      "checked": []
+    },
+    "transformation": {
+      "dx": NaN,
+      "dy": NaN
+    },
+    "schematisations": {}
+  },
+  "hares": {
+    "initialized": true,
+    "input_generated": true,
+    "use_incoming_wave_factors": true,
+    "hydraulic loads": {
+      "factor Tm Tp": 1.1,
+      "water depth for wave length": NaN
+    },
+    "wave directions": {
+      "lowest": 0,
+      "highest": 360,
+      "bin size": 5
+    },
+    "frequencies": {
+      "lowest": NaN,
+      "highest": NaN,
+      "number of bins": 20,
+      "scale": "lineair",
+      "checked": []
+    },
+    "2d wave spectrum": {
+      "spread": 10.0,
+      "gamma": 3.3,
+      "min energy": 0.01
+    },
+    "paths": {
+      "hares folder": "",
+      "schematisation folder": ""
+    },
+    "water levels": {
+      "checked": []
+    },
+    "transformation": {
+      "dx": NaN,
+      "dy": NaN
+    },
+    "schematisations": {}
+  },
+  "export": {
+    "export_HLCD_and_config": true,
+    "HLCD": "",
+    "export_succeeded": false
+  }
+}

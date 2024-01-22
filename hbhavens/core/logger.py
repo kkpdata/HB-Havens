@@ -1,5 +1,4 @@
 import logging
-import sys
 
 def initialize_logger(filename='hbhavens.log', level=logging.INFO, include_console=False):
 

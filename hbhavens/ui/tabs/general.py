@@ -1,5 +1,5 @@
 import os
-import time
+import matplotlib.pyplot as plt
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
@@ -150,7 +150,10 @@ class InteractiveLegend:
         # the legend, so they need to be activated for picking seperately
         for key, handle in zip(keys, self.legend.legendHandles):
             # Enable picking, 5 pts tolerance
-            handle.set_picker(5)
+            if isinstance(handle, plt.Line2D):
+                handle.set_pickradius(5)
+            else:
+                handle.set_picker(5)
             self.lined[handle] = self.elements[key]
 
 

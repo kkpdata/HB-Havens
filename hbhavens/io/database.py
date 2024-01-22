@@ -38,6 +38,7 @@ inputvariableids = {
     15 : "Uncertainty water level (u)",
     16 : "Storm surge duration",
     17 : "Time shift surge and tide",
+    18 : "Lake level VZM",
 }
 
 intputvarabr = {
@@ -56,6 +57,7 @@ intputvarabr = {
     "Time shift surge and tide": 'P={:03.0f}',
     "Wind direction": 'D={:05.1f}',
     "ClosingSituationId": 'K={:02d}',
+    "Lake level VZM": 'M={:04.2f}',
 }
 
 resultvariableids = {
@@ -65,7 +67,8 @@ resultvariableids = {
     4 : "Tp",
     5 : "Tpm",
     6 : "Tm-1,0",
-    7 : "Wave direction"
+    7 : "Wave direction",
+    8 : "Storage situation VZM",
 }
 
 def add_to_table(tablename, dataframe, conn):
@@ -190,7 +193,7 @@ class ExportResultTable(datamodels.ExtendedDataFrame):
         result_selection = result_selection.sort_values(
             by=self.sort_cols).rename(columns={v: k for k, v in column_mapping.items()})
         
-        self.loc[:, self.sort_cols + self.result_columns] = result_selection.reset_index(drop=True)
+        self[self.sort_cols + self.result_columns] = result_selection[self.sort_cols + self.result_columns].reset_index(drop=True)
 
         # 2. Add hydraulic loads
         # Only if not recalculated water levels. If recalculated water levels, the original hydraulic loads are used
@@ -474,11 +477,11 @@ class HRDio:
         uncertainties.columns = pd.MultiIndex.from_tuples([tuple(col.replace('mu', 'Mean').replace('sigma', 'Standarddeviation').split()) for col in uncertainties.columns])
         uncertainties = uncertainties.stack()
         # get closing situations id
-        csids = np.stack(self.conn.execute('SELECT DISTINCT(ClosingSituationId) FROM ClosingSituations;').fetchall()).tolist()
+        csids = np.hstack(self.conn.execute('SELECT DISTINCT(ClosingSituationId) FROM ClosingSituations;').fetchall()).tolist()
         # Stack uncertainties dataframe for each ClosingSituationId
-        if isinstance(csids, (int, np.int)):
+        if len(csids) == 1:
             UncertaintyModelFactor = uncertainties.reset_index()
-            UncertaintyModelFactor['ClosingSituationId'] = csids
+            UncertaintyModelFactor['ClosingSituationId'] = csids[0]
         else:
             UncertaintyModelFactor = pd.concat([uncertainties]*len(csids)).reset_index()
             UncertaintyModelFactor['ClosingSituationId'] = np.repeat(csids, len(uncertainties))

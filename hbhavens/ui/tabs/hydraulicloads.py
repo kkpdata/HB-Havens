@@ -11,6 +11,7 @@ from hbhavens.ui import widgets
 from hbhavens.io import database
 
 
+
 class HydraulicLoadTab(widgets.AbstractTabWidget):
     """
     Tab with a tableview of the hydraulic loads

@@ -8,33 +8,17 @@ Description : TabWidget classes
 """
 
 import csv
-import itertools
 import logging
 import os
-import time
 from datetime import datetime
-
-import geopandas as gpd
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from descartes import PolygonPatch
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg, NavigationToolbar2QT
-from matplotlib.collections import LineCollection, PatchCollection
-from matplotlib.lines import Line2D
-# Toegevoegd Svasek 31/10/2018 - Ander gebruik van figure, waardoor er in Spyder geen extra figuur opent
-from matplotlib.figure import Figure
-from matplotlib.patches import Arrow
-import matplotlib
 from PyQt5 import Qt, QtCore, QtGui, QtWidgets
-from shapely.geometry import LineString, Point, Polygon, MultiPolygon
 
-from hbhavens import core, io, ui
+from hbhavens import ui
 from hbhavens.core.general import replace_column
 from hbhavens.ui import models as HBHModels
 from hbhavens.ui import widgets, threads, dialogs
-
-from hbhavens.ui.tabs.general import SplittedTab
 
 logger = logging.getLogger(__name__)
 
@@ -259,7 +243,104 @@ class SchematisationTab(widgets.AbstractTabWidget):
 
         vlayout.addLayout(self.entrance_layout)
 
+        # Breakwater 1 specification
+        #----------------
+        self.breakwater1 = QtWidgets.QHBoxLayout()
+        self.breakwater1.setSpacing(10)
+        self.breakwater1.setContentsMargins(5, 0, 5, 0)
+        # Description
+        label = QtWidgets.QLabel('Havendam 1:')
+        label.setFixedWidth(150)
+        self.breakwater1.addWidget(label)
 
+        # Breakwater heights label
+        self.breakwater1.addWidget(QtWidgets.QLabel('Hoogte = '))
+        # Breakwater heights lineedit
+        self.hoogte1 = QtWidgets.QLineEdit()
+        self.hoogte1.setFixedWidth(100)
+        regexp = QtCore.QRegExp("^-?\d*(?:[\.\,]\d*)?$")
+        self.hoogte1.setValidator(QtGui.QRegExpValidator(regexp))
+        self.hoogte1.editingFinished.connect(lambda breakwater=0: self._parse_breakwater_height(breakwater)) # parse breakwater height
+        self.breakwater1.addWidget(self.hoogte1)
+        # Breakwater heights unit
+        self.breakwater1.addWidget(QtWidgets.QLabel('m+NAP'))
+
+        # Breakwater alpha label
+        self.breakwater1.addWidget(QtWidgets.QLabel('alpha = '))
+        # Breakwater alpha lineedit
+        self.alpha1 = QtWidgets.QLineEdit()
+        self.alpha1.setFixedWidth(100)
+        regexp = QtCore.QRegExp("^\d*(?:[\.\,]\d*)?$")
+        self.alpha1.setValidator(QtGui.QRegExpValidator(regexp))
+        self.alpha1.editingFinished.connect(lambda breakwater=0: self._parse_breakwater_alpha(breakwater)) # parse breakwater alpha
+        self.breakwater1.addWidget(self.alpha1)
+
+        # Breakwater beta label
+        self.breakwater1.addWidget(QtWidgets.QLabel('beta = '))
+        # Breakwater beta lineedit
+        self.beta1 = QtWidgets.QLineEdit()
+        self.beta1.setFixedWidth(100)
+        regexp = QtCore.QRegExp("^\d*(?:[\.\,]\d*)?$")
+        self.beta1.setValidator(QtGui.QRegExpValidator(regexp))
+        self.beta1.editingFinished.connect(lambda breakwater=0: self._parse_breakwater_beta(breakwater)) # parse breakwater beta
+        self.breakwater1.addWidget(self.beta1)
+
+        self.breakwater1.addItem(QtWidgets.QSpacerItem(0, 0, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Maximum))
+
+        # self.enable_elements(self.breakwater1, False)
+
+        vlayout.addLayout(self.breakwater1)
+
+        # Breakwater 2 specification
+        #----------------
+        self.breakwater2 = QtWidgets.QHBoxLayout()
+        self.breakwater2.setSpacing(10)
+        self.breakwater2.setContentsMargins(5, 0, 5, 0)
+        # Description
+        label = QtWidgets.QLabel('Havendam 2:')
+        label.setFixedWidth(150)
+        self.breakwater2.addWidget(label)
+
+        # Breakwater heights label
+        self.breakwater2.addWidget(QtWidgets.QLabel('Hoogte = '))
+        # Breakwater heights lineedit
+        self.hoogte2 = QtWidgets.QLineEdit()
+        self.hoogte2.setFixedWidth(100)
+        regexp = QtCore.QRegExp("^-?\d*(?:[\.\,]\d*)?$")
+        self.hoogte2.setValidator(QtGui.QRegExpValidator(regexp))
+        self.hoogte2.editingFinished.connect(lambda breakwater=1: self._parse_breakwater_height(breakwater)) # parse breakwater height
+        self.breakwater2.addWidget(self.hoogte2)
+        # Breakwater heights unit
+        self.breakwater2.addWidget(QtWidgets.QLabel('m+NAP'))
+
+        # Breakwater alpha label
+        self.breakwater2.addWidget(QtWidgets.QLabel('alpha = '))
+        # Breakwater alpha lineedit
+        self.alpha2 = QtWidgets.QLineEdit()
+        self.alpha2.setFixedWidth(100)
+        regexp = QtCore.QRegExp("^\d*(?:[\.\,]\d*)?$")
+        self.alpha2.setValidator(QtGui.QRegExpValidator(regexp))
+        self.alpha2.editingFinished.connect(lambda breakwater=1: self._parse_breakwater_alpha(breakwater)) # parse breakwater alpha
+        self.breakwater2.addWidget(self.alpha2)
+
+        # Breakwater beta label
+        self.breakwater2.addWidget(QtWidgets.QLabel('beta = '))
+        # Breakwater beta lineedit
+        self.beta2 = QtWidgets.QLineEdit()
+        self.beta2.setFixedWidth(100)
+        regexp = QtCore.QRegExp("^\d*(?:[\.\,]\d*)?$")
+        self.beta2.setValidator(QtGui.QRegExpValidator(regexp))
+        self.beta2.editingFinished.connect(lambda breakwater=1: self._parse_breakwater_beta(breakwater)) # parse breakwater beta
+        self.breakwater2.addWidget(self.beta2)
+
+        self.breakwater2.addItem(QtWidgets.QSpacerItem(0, 0, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Maximum))
+
+        # self.enable_elements(self.breakwater2, False)
+
+        vlayout.addLayout(self.breakwater2)
+
+        # Representative bottom level
+        #----------------
         self.repbottomlevel = widgets.ParameterInputLine('Representatieve bodemligging:', 150, unitlabel='m+NAP')
         self.repbottomlevel.LineEdit.editingFinished.connect(self._check_rep_bottom)
         regexp = QtCore.QRegExp("^-?\d+(?:[\.\,]\d+)?$")
@@ -364,6 +445,17 @@ class SchematisationTab(widgets.AbstractTabWidget):
 
         return proceed
 
+    def to_string_check_exceptions(self, value):
+        if isinstance(value,str):
+            if value in ['None','nan']:
+                return ''
+        if isinstance(value,float) or isinstance(value,int):
+            if np.isnan(value):
+                return ''
+            else:
+                return str(value)
+        
+
     def openData(self):
         """
         Fill line edits etcetera with data from project file
@@ -379,12 +471,28 @@ class SchematisationTab(widgets.AbstractTabWidget):
             self.breakwaterbrowse.LineEdit.setText(self.settings['schematisation']['breakwater_shape'])
             if len(self.schematisation.breakwaters) == 1:
                 self.enable_elements(self.entrance_layout, True)
+                self.enable_elements(self.breakwater2, False)
+
+        if self.settings['schematisation']['breakwater_properties']['height']:
+            self.hoogte1.setText(self.to_string_check_exceptions(self.settings['schematisation']['breakwater_properties']['height'][0]))
+            if len(self.schematisation.breakwaters) == 2:
+                self.hoogte2.setText(self.to_string_check_exceptions(self.settings['schematisation']['breakwater_properties']['height'][1]))
+
+        if self.settings['schematisation']['breakwater_properties']['alpha']:
+            self.alpha1.setText(self.to_string_check_exceptions(self.settings['schematisation']['breakwater_properties']['alpha'][0]))
+            if len(self.schematisation.breakwaters) == 2:
+                self.alpha2.setText(self.to_string_check_exceptions(self.settings['schematisation']['breakwater_properties']['alpha'][1]))
+
+        if self.settings['schematisation']['breakwater_properties']['beta']:
+            self.beta1.setText(self.to_string_check_exceptions(self.settings['schematisation']['breakwater_properties']['beta'][0]))
+            if len(self.schematisation.breakwaters) == 2:
+                self.beta2.setText(self.to_string_check_exceptions(self.settings['schematisation']['breakwater_properties']['beta'][1]))
 
         if self.settings['schematisation']['entrance_coordinate']:
             self.coord.setText('{};{}'.format(*self.settings['schematisation']['entrance_coordinate']))
 
         if self.settings['schematisation']['representative_bedlevel']:
-            self.repbottomlevel.set_value(str(self.settings['schematisation']['representative_bedlevel']))
+            self.repbottomlevel.set_value(self.to_string_check_exceptions(self.settings['schematisation']['representative_bedlevel']))
 
         if self.settings['hydraulic_loads']['HRD']:
             self.fill_supportloc_combobox()
@@ -399,7 +507,6 @@ class SchematisationTab(widgets.AbstractTabWidget):
         if self.settings['schematisation']['result_locations_shape']:
             self.result_location_browse.set_value(self.settings['schematisation']['result_locations_shape'])
             self.set_finished(True)
-
 
     def enable_elements(self, layout, boolean):
         for i in range(layout.count()):
@@ -418,7 +525,7 @@ class SchematisationTab(widgets.AbstractTabWidget):
         """
 
         # Get the old bottom level from the settings
-        old_level = str(self.settings['schematisation']['representative_bedlevel'])
+        old_level = str(self.schematisation.bedlevel)
 
         # Read from line edit
         rep_bottom_input = self.repbottomlevel.LineEdit.text()
@@ -434,10 +541,11 @@ class SchematisationTab(widgets.AbstractTabWidget):
         valid = self.schematisation.check_bedlevel(rep_bottom_input)
         if not valid:
             # Reset and pass error
-            self.repbottomlevel.LineEdit.setText(old_level)
+            self.repbottomlevel.LineEdit.setText(self.to_string_check_exceptions(old_level))
             raise ValueError('Opgegeven bodemniveau hoger dan het laagste haventerrein. Kies een lager niveau, of pas de hoogte van het haventerrein aan.')
         else:
             # If no errors
+            self.schematisation.bedlevel = rep_bottom_input
             self.settings['schematisation']['representative_bedlevel'] = rep_bottom_input
             self.mainwindow.setDirty()
 
@@ -449,7 +557,7 @@ class SchematisationTab(widgets.AbstractTabWidget):
         valid = self.schematisation.check_entrance_coordinate(crd)
         # Check if succeeded
         if valid:
-            self.schematisation.entrance_coordinate = crd
+            self.schematisation.entrance = crd
             self.settings['schematisation']['entrance_coordinate'] = crd
             self.schematisation.generate_harbor_bound()
             self.overview_tab.mapwidget.set_visible('inner')
@@ -458,13 +566,79 @@ class SchematisationTab(widgets.AbstractTabWidget):
         else:
             self.coord.setText('')
             raise ValueError('Opgegeven ligt niet binnen het haventerrein. Geef een ander coordinaat, of pas het haventerrein aan.')
+    
+    def _parse_breakwater_height(self, breakwater):
+        """Parse the input values for the breakwater height"""
+
+        # Read from line edit
+        if breakwater == 0:
+            parent = self.hoogte1
+        else:
+            parent = self.hoogte2
+
+        values = self.schematisation.breakwater_properties['height']
+        height = float(parent.text().replace(',', '.'))
+        values[breakwater] = height
+        valid = self.schematisation.check_breakwater_heights(values)
+
+        if valid:
+            self.schematisation.breakwater_properties['height'] = values
+            self.settings['schematisation']['breakwater_properties']['height'] = values
+            self.mainwindow.setDirty()
+        else:
+            parent.setText('')
+            raise ValueError(f'Golfbreker {breakwater + 1} hoogte niet juist.')
+
+    def _parse_breakwater_alpha(self, breakwater):
+        """Parse the input values for the breakwater alpha"""
+
+        # Read from line edit
+        if breakwater == 0:
+            parent = self.alpha1
+        else:
+            parent = self.alpha2
+
+        values = self.schematisation.breakwater_properties['alpha']
+        alpha = float(parent.text().replace(',', '.'))
+        values[breakwater] = alpha
+        valid = self.schematisation.check_breakwater_alphas(values)
+
+        if valid:
+            self.schematisation.breakwater_properties['alpha'] = values
+            self.settings['schematisation']['breakwater_properties']['alpha'] = values
+            self.mainwindow.setDirty()
+        else:
+            parent.setText('')
+            raise ValueError(f'Golfbreker {breakwater + 1} alpha niet juist.')
+
+    def _parse_breakwater_beta(self, breakwater):
+        """Parse the input values for the breakwater beta"""
+
+        # Read from line edit
+        if breakwater == 0:
+            parent = self.beta1
+        else:
+            parent = self.beta2
+
+        values = self.schematisation.breakwater_properties['beta']
+        beta = float(parent.text().replace(',', '.'))
+        values[breakwater] = beta
+        valid = self.schematisation.check_breakwater_betas(values)
+
+        if valid:
+            self.schematisation.breakwater_properties['beta'] = values
+            self.settings['schematisation']['breakwater_properties']['beta'] = values
+            self.mainwindow.setDirty()
+        else:
+            parent.setText('')
+            raise ValueError(f'Golfbreker {breakwater + 1} beta niet juist.')
 
     def _load_rep_bottom(self):
         """
         Load representative bottom level from saved project.
         """
         # Read from settings
-        rep_bottom_input = self.settings['schematisation']['representative_bedlevel']
+        rep_bottom_input = self.schematisation.bedlevel
         # Set to line edit
         self.repbottomlevel.set_value(str(rep_bottom_input))
         
@@ -521,7 +695,7 @@ class SchematisationTab(widgets.AbstractTabWidget):
             return None
 
         if not np.size(self.schematisation.support_locations):
-            NotificationDialog('Er is nog geen HRD ingeladen, doe dit eerst.', severity='warning')
+            dialogs.NotificationDialog('Er is nog geen HRD ingeladen, doe dit eerst.', severity='warning')
             return None
         
         # Check if the selected support location is equal to the location
@@ -580,7 +754,7 @@ class SchematisationTab(widgets.AbstractTabWidget):
         Method to import file path for breakwater and add it to the
         harbor area class. Also the plotting is called from here.
         """
-        # Ask if the use may proceed
+        # Ask if the user may proceed
         if not self.may_proceed():
             return None
 
@@ -599,10 +773,26 @@ class SchematisationTab(widgets.AbstractTabWidget):
             # Enable extra input coordinate if 1 breakwater
             if len(self.schematisation.breakwaters) == 1:
                 self.enable_elements(self.entrance_layout, True)
+                self.enable_elements(self.breakwater1, True)
+                self.enable_elements(self.breakwater2, False)
+
+                self.hoogte1.setText(str(self.schematisation.breakwater_properties['height'][0]))
+                self.alpha1.setText(str(self.schematisation.breakwater_properties['alpha'][0]))
+                self.beta1.setText(str(self.schematisation.breakwater_properties['beta'][0]))
             else:
                 self.enable_elements(self.entrance_layout, False)
+                self.enable_elements(self.breakwater1, True)
+                self.enable_elements(self.breakwater2, True)
+
                 self.overview_tab.mapwidget.set_visible('inner')
                 self.overview_tab.mapwidget.set_visible('entrance')
+                
+                self.hoogte1.setText(str(self.schematisation.breakwater_properties['height'][0]))
+                self.alpha1.setText(str(self.schematisation.breakwater_properties['alpha'][0]))
+                self.beta1.setText(str(self.schematisation.breakwater_properties['beta'][0]))
+                self.hoogte2.setText(str(self.schematisation.breakwater_properties['height'][1]))
+                self.alpha2.setText(str(self.schematisation.breakwater_properties['alpha'][1]))
+                self.beta2.setText(str(self.schematisation.breakwater_properties['beta'][1]))
         except Exception as e:
             print(e)
 
@@ -678,7 +868,7 @@ class SchematisationTab(widgets.AbstractTabWidget):
             return None
 
         # Get support locations
-        support_location_names = [''] + self.schematisation.support_locations['Name'].values.tolist()
+        support_location_names = [''] + self.schematisation.support_locations['Name'].tolist()
         self.combobox.clear()
         self.combobox.addItems(support_location_names)
         self.combobox.setCurrentText('')
@@ -705,7 +895,7 @@ class CalculationMethodTab(widgets.AbstractTabWidget):
         self.load_from_settings()
 
         # Allow continuing to the next step
-        self.set_finished(True)
+        self.set_finished(False)
 
         # Enable connections again
         self.blockSignals(False)
@@ -865,6 +1055,7 @@ class CalculationMethodTab(widgets.AbstractTabWidget):
         self.hares_checkbox.setEnabled(False)
         self.hares_checkbox.setChecked(False)
         self.mainwindow.setDirty()
+        self.set_finished(True)
 
     def enable_swan(self, state):
         if self.signalsBlocked():
@@ -905,6 +1096,7 @@ class CalculationMethodTab(widgets.AbstractTabWidget):
         self.mainwindow.set_calculation_method('advanced')
         self.settings['calculation_method']['method'] = 'advanced'
         self.mainwindow.setDirty()
+        self.set_finished(True)
 
     def conditionGeometrystate(self):
         """ Check state and change conditionGeometry accordingly"""
@@ -1034,7 +1226,7 @@ class GenerateHarborLocationsWindow(QtWidgets.QDialog):
             already_existed = False
 
         # Save files
-        self.schematisation.result_locations.to_file(self.path)
+        self.schematisation.result_locations.to_file(self.path, crs='epsg:28992')
 
         if os.path.exists(self.path):
             # Check new date
@@ -1074,7 +1266,6 @@ def ConfirmOverwrite(self, path):
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
 
     self.overwrite = (confirmation == QtWidgets.QMessageBox.Yes)
-
 
 class SimpleCalculationTab(widgets.AbstractTabWidget):
     """
@@ -1172,7 +1363,7 @@ class SimpleCalculationTab(widgets.AbstractTabWidget):
         file_types = "Shape file (*.shp)"
         path, file_type = QtWidgets.QFileDialog.getSaveFileName(None, 'Export fetch lengths to shape file', '', file_types)
         self.mainwindow.setCursorWait()
-        self.calculation.wavegrowth.fetchlines.reset_index().to_file(path)
+        self.calculation.wavegrowth.fetchlines.reset_index().to_file(path, crs='epsg:28992')
         self.mainwindow.setCursorNormal()
 
     def update_progress(self, add_value, message=''):
@@ -1254,7 +1445,6 @@ class SimpleCalculationResultTab(widgets.AbstractTabWidget):
             self.calculation.wavegrowth.output.reset_index().round(3),
             self.calculation.wavebreaking.output.reset_index().round(3)
         ]
-
 
         # Add results depending on the modelled processes
         for description, df in zip(['Diffractie', 'Transmissie', 'Lokale golfgroei', 'Golfbreking'], dataframes):
@@ -1347,18 +1537,20 @@ class SimpleCalculationResultTab(widgets.AbstractTabWidget):
     def set_header_sizes(self, model):
         """Set header sizes based on the first dataframe row"""
         dataframe = model._data
-        row = dataframe.max(axis=0)
-        columns = dataframe.columns
-        for i, (element, label) in enumerate(zip(row, columns)):
-            width = max(36 + len(str(element)) * 6, 70)
-            labelwidth = len(label) * 7
+        for i,column in enumerate(dataframe):
+            try:
+                maxval = dataframe[column].max()
+            except:
+                maxval = dataframe[column].cat.as_ordered().max()
             
-            self.tableview.setColumnWidth(i, max(width, labelwidth))
+            width = 36 + len(str(maxval)) * 6
+            labelwidth = len(column) * 7
+            self.tableview.setColumnWidth(i, max(width, labelwidth, 70))
 
     def _export_model(self):
 
         # Choose path
-        file_types = "CSV (*.csv);;Excel (*.xlsx)"
+        file_types = "Excel (*.xlsx);;CSV (*.csv)"
         path, file_type = QtWidgets.QFileDialog.getSaveFileName(None, 'Export table data', '', file_types)
 
         # Save file
@@ -2212,20 +2404,20 @@ class ModelUncertaintyTab(widgets.AbstractTabWidget):
 
     def _export_model(self):
 
-        self.path = QtWidgets.QFileDialog.getSaveFileName(None, 'Save file', '', "CSV/Excel (*.csv, *.xlsx)")[0]
+        # Choose path
+        file_types = "Excel (*.xlsx);;CSV (*.csv)"
+        path, file_type = QtWidgets.QFileDialog.getSaveFileName(None, 'Save file', '', file_types)
 
         # Replace Greek characters for export
-        df = self.tableview.model._data
+        # df = self.tableview.model._data
 
         # Save file
-        if self.path.endswith('.xlsx'):
-            self.tableview.model._data.to_excel(self.path)
-        elif self.path.endswith('.csv'):
-            with open(self.path, 'w') as f:
+        if 'csv' in file_type:
+            with open(path, 'w') as f:
                 f.write('sep=;\n')
                 self.tableview.model._data.to_csv(f, sep=';')
-        else:
-            raise ValueError('File extension not recognized. Choose *.csv or *.xlsx.')
+        elif 'xlsx' in file_type:
+            self.tableview.model._data.to_excel(path)
 
     def _define_uncertainties(self):
         self.define_window = dialogs.DefineUncertaintiesDialog(self)
@@ -2404,7 +2596,7 @@ class ExportToDatabaseTab(widgets.AbstractTabWidget):
             return None
         idx = int(self.sender().objectName())
         dfidx = self.export.export_dataframe.index[idx]
-        self.export.export_dataframe.set_value(dfidx, 'SQLite-database', path)
+        self.export.export_dataframe.at[dfidx, 'SQLite-database'] = path
         
     def _import_table(self):
         """
@@ -2433,7 +2625,7 @@ class ExportToDatabaseTab(widgets.AbstractTabWidget):
             return None
 
         checkcols = self.export.dfcolumns[:]
-        if not all(np.in1d(checkcols, df.columns.values.tolist())):
+        if not all(np.in1d(checkcols, df.columns.tolist())):
             raise ValueError('Niet alle kolomnamen ({}) komen voor in de tabel.'.format(', '.join(checkcols)))
 
         present_indices = np.in1d(self.export.location_names, df['Naam'].squeeze())

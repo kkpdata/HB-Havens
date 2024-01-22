@@ -1,12 +1,7 @@
 import itertools
 import logging
-import os
-
-import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
-from matplotlib.collections import LineCollection, PatchCollection
 from matplotlib.figure import Figure
 from PyQt5 import QtWidgets, QtCore
 
@@ -459,7 +454,7 @@ class DataSelectorWidget(QtWidgets.QWidget):
             xvals = list(map(dct.get, xvals))
 
         # Get visible
-        resultvals = {param: column for param, column in table.loc[idx, result_params].iteritems()}
+        resultvals = {param: column for param, column in table.loc[idx, result_params].items()}
         resultvals['x'] = xvals
 
         self.scatterplot.update_scatters(resultvals)

@@ -6,17 +6,11 @@ Project     : PR3594.10.00
 Description : HB Havens
 
 """
-import json
 import os
 import re
 import shutil
-from datetime import datetime
-from io import StringIO
-
 import numpy as np
-import pandas as pd
 
-from hbhavens import core, ui
 from hbhavens.core.spectrum import Spectrum2D, jonswap, jonswap_2d
 
 SWAN_TIME_FORMAT = '%Y%m%d.%H%M%S'
@@ -66,7 +60,7 @@ class SwanIO:
             raise OSError('Did not succeed deleting the old SWAN-folder: {}. Close the folder and try again.'.format(swanFolder))
 
         if not os.path.exists(swanFolder):
-            swanSubFolders = ['block', 'bottom', 'error_files', 'inputs', 'inputs/masters', 'logfiles', 'points', 'print_files', 'spectra', 'table']
+            swanSubFolders = ['block', 'bottom', 'error_files', 'inputs', 'inputs/masters', 'logfiles', 'points', 'print_files', 'spectra', 'table','par']
             for swanSubFolder in swanSubFolders:
                 swanSubFolder = os.path.join(swanFolder,swanSubFolder)
                 self._makeFolder(swanSubFolder)

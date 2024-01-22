@@ -5,7 +5,7 @@ import geopandas as gpd
 import matplotlib
 import numpy as np
 import pandas as pd
-from descartes import PolygonPatch
+from shapely.plotting import patch_from_polygon as PolygonPatch
 from matplotlib.backends.backend_qt5agg import (FigureCanvasQTAgg,
                                                 NavigationToolbar2QT)
 from matplotlib.collections import LineCollection, PatchCollection
@@ -58,6 +58,7 @@ class OverviewMapTab(SplittedTab):
     """
 
     def __init__(self, mainwindow):
+
         # Leftwidget
         self.mapwidget = MapWidget(mainmodel=mainwindow.mainmodel, maintab=self)
         
@@ -73,6 +74,7 @@ class OverviewMapTab(SplittedTab):
     def on_moved(self):
         # Call parent method
         super(OverviewMapTab, self).on_moved()
+
         # Check if the thread is still running from an older background update
         if self.move_thread.isRunning():
             self.move_thread.quit()
@@ -276,10 +278,10 @@ class MapWidget(QtWidgets.QWidget):
 
         self.comboboxitems = [
             ('Geen achtergrond', '', ''),
-            ('OpenTopo Achtergrondkaart', 'layer.png', 'opentopoachtergrondkaart'),
-            ('Luchtfoto PDOK', 'layer.png', '2017_ortho25'),
-            ('AHN2 5m DTM', 'layer.png', 'ahn2_05m_ruw'),
-            ('BRT achtergrondkaart Grijs', 'layer.png', 'brtachtergrondkaartgrijs')
+            ('top10nl Achtergrondkaart', 'https://service.pdok.nl/brt/top10nl/wmts/v1_0?request=GetCapabilities&service=wmts', 'top10nl'),
+            ('Luchtfoto PDOK', 'https://service.pdok.nl/hwh/luchtfotorgb/wmts/v1_0?request=GetCapabilities&service=wmts', 'Actueel_ortho25'),
+            ('AHN3 0.5m DTM', 'https://service.pdok.nl/rws/ahn3/wmts/v1_0?request=getcapabilities&service=wmts', 'ahn3_05m_dtm'),
+            ('BRT achtergrondkaart Grijs', 'https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0?request=getcapabilities&service=wmts', 'grijs')
         ]
 
         # Get path to icon data
@@ -326,7 +328,7 @@ class MapWidget(QtWidgets.QWidget):
             self.set_visible('harborarea')
         if not self.schematisation.breakwaters.empty:
             self.set_visible('breakwaters')
-            if len(self.schematisation.breakwaters) == 2 or hasattr(self.schematisation, 'entrance_coordinate'):
+            if len(self.schematisation.breakwaters) == 2 or hasattr(self.schematisation, 'entrance'):
                 self.set_visible('inner')
                 self.set_visible('entrance')
         if not self.schematisation.flooddefence.empty:
@@ -358,9 +360,16 @@ class MapWidget(QtWidgets.QWidget):
                     if labelkey not in self.labels.keys():
                         self.labels[labelkey] = self.ax.text(*row.geometry.coords[0], s=getattr(row, column), ha='left', va='bottom')
 
+            # Breakwater labels
+            if 'breakwaters' in self.plot_elements.keys(): 
+                for i,breakwater in enumerate(self.schematisation.breakwaters.itertuples()):
+                    labelkey = f'Havendam {i+1}'
+                    if labelkey not in self.labels.keys():
+                        self.labels[labelkey] = self.ax.text(*breakwater.geometry.centroid.coords[0], s=labelkey, ha='left', va='bottom')
+
         else:
             # Remove all labels
-            for key, label in self.labels.items():
+            for _, label in self.labels.items():
                 label.remove()
             self.labels.clear()
                 
@@ -385,6 +394,7 @@ class MapWidget(QtWidgets.QWidget):
     
             # Get layer name from combobox
             self.WMTSlayer = item[2]
+            self.WMTSurl = item[1]
     
             # Remove the present WMTS
             if self.WMTS is not None:
@@ -397,7 +407,7 @@ class MapWidget(QtWidgets.QWidget):
                 self.landboundary.set_visible(False)
                 # Add Web Mapping Tile Service
                 self.WMTS = WMTS(
-                    'http://geodata.nationaalgeoregister.nl/tiles/service',
+                    self.WMTSurl,
                     'EPSG:28992',
                     self.WMTSlayer
                 )
@@ -451,7 +461,10 @@ class MapWidget(QtWidgets.QWidget):
         self.ax.set_ylim(self.bbox[1], self.bbox[3])
 
         # Scale markers in plotter
-        self.main.plotter.set_location_values()
+        try:
+            self.main.plotter.set_location_values()
+        except: # during OverviewMapTab__init__()
+            pass
         self.canvas.draw_idle()
 
         # Skip if no layer
@@ -504,7 +517,7 @@ class MapWidget(QtWidgets.QWidget):
 
         # If element is geodataframe
         geometry = getattr(self.schematisation, element)
-        if isinstance(geometry, (gpd.GeoDataFrame, gpd.GeoSeries)):
+        if isinstance(geometry, (gpd.GeoDataFrame, gpd.GeoSeries, pd.Series)):
             if geometry.empty:
                 return None
             self.plot_elements[element] = self._plot_gdf(gdf=geometry, kwargs=kwargs, ax=ax)
@@ -513,7 +526,8 @@ class MapWidget(QtWidgets.QWidget):
         elif isinstance(geometry, (Polygon, MultiPolygon)):
             self.plot_elements[element] = ax.add_collection(PatchCollection([PolygonPatch(geometry)], **kwargs))
         else:
-            raise TypeError('Geometry type not recognized.')
+            print(geometry)
+            raise TypeError(f'Geometry type {type(geometry)} not recognized.')
 
         # Add legend handles
         if plot_props['handle'] == 'patch':
@@ -547,10 +561,10 @@ class MapWidget(QtWidgets.QWidget):
             ax = self.ax
 
         # get geometries
-        if isinstance(gdf, gpd.GeoSeries):
+        if isinstance(gdf, (gpd.GeoSeries, pd.Series)):
             geometries = [gdf['geometry']]
         else:
-            geometries = gdf['geometry'].values.tolist()
+            geometries = gdf['geometry'].tolist()
 
         # for line and pts
         if isinstance(geometries[0], LineString):
@@ -696,7 +710,7 @@ class DataSelectorWidget(QtWidgets.QWidget):
             cbar_ticks = np.linspace(*self.cmaprange, num=6)
             self.colorbar.set_ticks(np.linspace(0, 1, num=6))
             self.colorbar.set_ticklabels([f'{val:.2f}' for val in cbar_ticks])
-            self.colorbar.draw_all()
+            self.colorbar._draw_all()
             
         self.cbcanvas.draw_idle()
         
@@ -1009,22 +1023,34 @@ class ResultsPlotter:
             line = geometry.extend_point_to_linestring(row.geometry, direction[row.Naam], (0, -lengths[row.Naam]))
             self.elements[row.Naam].set_data(*line.T)
 
-    def set_breaking_lines(self, direction):
+    def set_breaking_lines(self, direction, values=None):
         """
         Get lines for transmission
         """
         if isinstance(direction, (float, int)):
             direction = {row.Naam: direction for row in self.result_locations.itertuples()}
 
-        for row in self.result_locations.itertuples():
-            line = geometry.extend_point_to_linestring(row.geometry, direction[row.Naam], (0, -10000), as_LineString=True)
-            line = self.area_union.intersection(line)
-            if isinstance(line, LineString):
-                self.elements[row.Naam].set_data(*line.coords.xy)
-            elif isinstance(line, MultiLineString):
-                self.elements[row.Naam].set_data(*line[0].coords.xy)
-            else:
+        for i,row in enumerate(self.result_locations.itertuples()):
+            if values[i] == None or values[i] == 0:
                 self.elements[row.Naam].set_data([], [])
+            else:
+                line = geometry.extend_point_to_linestring(row.geometry, direction[row.Naam], (0, -10000), as_LineString=True)
+                line = self.area_union.intersection(line)
+                if line.distance(row.geometry) < 1e-8: # check if line extends from result location
+                    if isinstance(line, LineString):
+                        if line.is_empty:
+                            self.elements[row.Naam].set_data([], [])
+                        else:
+                            self.elements[row.Naam].set_data(*line.coords.xy)
+                    elif isinstance(line, MultiLineString):
+                        if list(line.geoms)[0].is_empty:
+                            self.elements[row.Naam].set_data([], [])
+                        else:
+                            self.elements[row.Naam].set_data(*list(line.geoms)[0].coords.xy)
+                    else:
+                        self.elements[row.Naam].set_data([], [])
+                else:
+                    self.elements[row.Naam].set_data([], [])
                     
     def set_location_values(self, values=None, rotation=None):
         """
@@ -1181,7 +1207,6 @@ class ResultsPlotter:
     def _update_geometries(self, process_data):
         
         process = self.dataselector.selected_process
-        # Diffraction: Lr, Beq, wave direction, Kd
         if process == 'Diffractie (Kd)':
             self.set_wave_direction(process_data['wavedir'])
             self.set_location_values(process_data['Kd'].sort_index().array, rotation=process_data['diffr_angle'])
@@ -1193,14 +1218,14 @@ class ResultsPlotter:
             self.set_transmission_lines(process_data['wavedir'], process_data['freeboard'])
 
         elif process == 'Lokale Golfgroei (Hs,lg)':
-            self.set_wave_direction(process_data['wavedir'])
+            self.set_wave_direction(process_data['winddir'])
             self.set_location_values(process_data['Hs'].sort_index().array, rotation=(process_data['winddir'] + 180) % 360)
             self.set_fetch_lines(process_data['wavedirs'], process_data['Feq'])
 
         elif process == 'Golfbreking (-)':
             self.set_wave_direction(process_data['wavedir'])
             self.set_location_values(process_data['breaking_fraction'], rotation=(process_data['wavedir'] + 180) % 360)
-            self.set_breaking_lines(process_data['wavedir'])
+            self.set_breaking_lines(process_data['wavedir'],process_data['breaking_fraction'])
 
         else:
             self.set_wave_direction(process_data['wavedir'])
@@ -1215,8 +1240,8 @@ class ResultsPlotter:
         if 'arrow' in self.elements:
             self.elements['arrow'].remove()
             
-        x0, y0 = line[0]
-        dx, dy = (line[1] - line[0])
+        # x0, y0 = line[0]
+        # dx, dy = (line[1] - line[0])
         self.elements['arrow'] = self.ax.arrow(*line[0], *(line[1] - line[0]), length_includes_head=True, head_width=scale/4, head_length=scale/2, color='k')
     
     def set_parameter(self):

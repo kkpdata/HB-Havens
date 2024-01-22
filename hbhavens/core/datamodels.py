@@ -60,7 +60,7 @@ class ExtendedGeoDataFrame(gpd.GeoDataFrame):
     def set_data(self, gdf):
 
         # Copy content
-        for col, values in gdf.iteritems():
+        for col, values in gdf.items():
             self[col] = values.values
         self.index = gdf.index
         self.index.name = gdf.index.name
@@ -179,7 +179,7 @@ class ExtendedDataFrame(pd.DataFrame):
         Method to add data from other dataframe to current dataframe
         """
         # Copy content
-        for col, values in dataframe.iteritems():
+        for col, values in dataframe.items():
             self[col] = values.values
         self.index = dataframe.index
         self.index.name = dataframe.index.name

@@ -10,7 +10,6 @@ import logging
 from collections import namedtuple
 from io import BytesIO
 from multiprocessing.pool import ThreadPool
-
 import bs4
 import matplotlib.pyplot as plt
 import numpy as np
@@ -215,6 +214,10 @@ class WMTS:
         self.url = url
         self.crs = crs
         self.wmts = owslib.wmts.WebMapTileService(url)
+        for i, op in enumerate(self.wmts.operations):
+            if(not hasattr(op, 'name')):
+                self.wmts.operations[i].name = ""
+
         self.layer = layer
         # Check if layer exists
         layers = self.wmts.contents.keys()

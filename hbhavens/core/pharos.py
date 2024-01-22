@@ -1,4 +1,3 @@
-
 import itertools
 import json
 import logging
@@ -12,15 +11,14 @@ from scipy.optimize import newton
 
 from hbhavens import io
 from hbhavens.core.geometry import average_angle, nau2car
-from hbhavens.core.spectrum import (JONSWAPSpectrum, Spectrum2D,
-                                    incoming_wave_factors, jonswap, jonswap_2d)
+from hbhavens.core.spectrum import JONSWAPSpectrum, Spectrum2D, incoming_wave_factors, jonswap, jonswap_2d
 
 g = 9.81
 
 logger = logging.getLogger(__name__)
 
-class Pharos:
 
+class Pharos:
     def __init__(self, parent):
         """
         Class Pharos
@@ -39,24 +37,47 @@ class Pharos:
 
         # Give the name of the result parameters for export
         self.result_parameters = {
-            'h': 'h',
-            'Hs' : 'Hs totaal',
-            'Tp' : 'Tp totaal',
-            'Tm-1,0' : 'Tm-1,0 totaal',
-            'Wave direction': 'Wave direction totaal',
+            "h": "h",
+            "Hs": "Hs totaal",
+            "Tp": "Tp totaal",
+            "Tm-1,0": "Tm-1,0 totaal",
+            "Wave direction": "Wave direction totaal",
         }
 
         # Get all settings
         self.settings = parent.project.settings
-        
+
         # Initialize tables
         self.spectrum_table = pd.DataFrame()
         columns = [
-            'Location', 'LocationId', 'Load combination', 'HydraulicLoadId', 'h', 'Hs', 'Tp', 'Tm-1,0', 'Wave direction', 'Wind direction', 
-            'Wind speed', 'Water level', 'Hs pharos', 'Tp pharos', 'Tm-1,0 pharos', 
-            'Wave direction pharos', 'X', 'Y', 'Normaal', 'Hs totaal', 'Tp totaal', 'Tm-1,0 totaal', 'Wave direction totaal',
-            'Hm0 swan', 'Tp swan', 'Tm-1,0 swan', 'Wave direction swan',
-        ] 
+            "Location",
+            "LocationId",
+            "Load combination",
+            "HydraulicLoadId",
+            "h",
+            "Hs",
+            "Tp",
+            "Tm-1,0",
+            "Wave direction",
+            "Wind direction",
+            "Wind speed",
+            "Water level",
+            "Hs pharos",
+            "Tp pharos",
+            "Tm-1,0 pharos",
+            "Wave direction pharos",
+            "X",
+            "Y",
+            "Normaal",
+            "Hs totaal",
+            "Tp totaal",
+            "Tm-1,0 totaal",
+            "Wave direction totaal",
+            "Hm0 swan",
+            "Tp swan",
+            "Tm-1,0 swan",
+            "Wave direction swan",
+        ]
         self.calculation_results = pd.DataFrame(columns=columns)
 
         # Empty objects
@@ -65,35 +86,35 @@ class Pharos:
         self.output_location_indices = {}
 
         self.result_locations = self.mainmodel.schematisation.result_locations
-        
+
     def get_frequency_range(self):
         """
         Determine frequency range for based on hydraulic loads,
         the presence of Tp or the factor Tp-Tm-1,0.
         """
 
-        if 'Tp' in self.hydraulic_loads.columns:
+        if "Tp" in self.hydraulic_loads.columns:
             # Get min and max
-            Tp = self.hydraulic_loads['Tp'].values.squeeze()
+            Tp = self.hydraulic_loads["Tp"].values.squeeze()
             Tp_min = Tp[Tp > 0.0].min()
             Tp_max = Tp.max()
-        
-        elif 'Tm-1,0' in self.hydraulic_loads.columns:
+
+        elif "Tm-1,0" in self.hydraulic_loads.columns:
             # Get factor
-            factor = self.settings['pharos']['hydraulic loads']['factor Tm Tp']
+            factor = self.settings["pharos"]["hydraulic loads"]["factor Tm Tp"]
             # Get min and max
-            Tm_10 = self.hydraulic_loads['Tm-1,0'].values.squeeze()
+            Tm_10 = self.hydraulic_loads["Tm-1,0"].values.squeeze()
             Tp_min = Tm_10[Tm_10 > 0.0].min() * factor
             Tp_max = Tm_10.max() * factor
-        
+
         else:
-            raise ValueError('Hydraulic loads are not loaded, or do not contain either Tp or Tm-1,0')
+            raise ValueError("Hydraulic loads are not loaded, or do not contain either Tp or Tm-1,0")
 
         # Calculate frequencies
         # Min frequency = 0.7 times the lowest frequency
-        f_min = 0.7 * (1. / Tp_max)
+        f_min = 0.7 * (1.0 / Tp_max)
         # Max frequency = 3 times the highest frequency
-        f_max = 3.0 * (1. / Tp_min)
+        f_max = 3.0 * (1.0 / Tp_min)
 
         return f_min, f_max
 
@@ -111,13 +132,13 @@ class Pharos:
 
         # Get location names and id's
         self.nlocations = len(self.result_locations)
-        
+
         # # Get load ids
         self.hydraulicloadids = self.hydraulic_loads.index.astype(int)
         self.nloads = len(self.hydraulicloadids)
 
         # Determine load ids for which there are no input waves (and no SWAN calculations have been carried out)
-        idx = (self.hydraulic_loads['Hs'] == 0.0)
+        idx = self.hydraulic_loads["Hs"] == 0.0
         self.no_wave_ids = self.hydraulicloadids[idx]
 
         # Empty calculation results, in case it needs to be refilled
@@ -126,32 +147,36 @@ class Pharos:
             self.calculation_results.dropna(inplace=True)
 
         # Add index and columns to table
-        self.calculation_results['Location'] = np.repeat(self.result_locations['Naam'], self.nloads)
-        self.calculation_results['LocationId'] = np.repeat(self.result_locations.index.values, self.nloads)
-        
-        self.calculation_results['HydraulicLoadId'] = np.tile(self.hydraulicloadids, self.nlocations)
+        self.calculation_results["Location"] = np.repeat(self.result_locations["Naam"], self.nloads)
+        self.calculation_results["LocationId"] = np.repeat(self.result_locations.index.values, self.nloads)
+
+        self.calculation_results["HydraulicLoadId"] = np.tile(self.hydraulicloadids, self.nlocations)
         # Add load combination description
         desc_dict = self.mainmodel.hydraulic_loads.description_dict
-        self.calculation_results['Load combination'] = [desc_dict[hlid] for hlid in self.calculation_results['HydraulicLoadId']]
+        self.calculation_results["Load combination"] = [
+            desc_dict[hlid] for hlid in self.calculation_results["HydraulicLoadId"]
+        ]
 
         # Get load parameters
-        load_parameters = self.hydraulic_loads.columns.intersection(['h', 'Hs', 'Tp', 'Tm-1,0', 'Wave direction', 'Wind direction', 'Wind speed', 'Water level'])
-            
+        load_parameters = self.hydraulic_loads.columns.intersection(
+            ["h", "Hs", "Tp", "Tm-1,0", "Wave direction", "Wind direction", "Wind speed", "Water level"]
+        )
+
         # Add values from iterations to calculation results
         tiled = np.tile(self.hydraulic_loads[load_parameters].values, (self.nlocations, 1))
         self.calculation_results[load_parameters] = tiled
-        
+
         # Add geometry
         # Get x, y and normaal per location, and repeat this for all lead combinations
-        x_y_norm =  np.round([[loc.geometry.x, loc.geometry.y, loc.Normaal] for loc in self.result_locations.itertuples()], 3)
-        self.calculation_results[['X',  'Y', 'Normaal']] = np.repeat(x_y_norm, self.nloads, axis=0)
+        x_y_norm = np.round(
+            [[loc.geometry.x, loc.geometry.y, loc.Normaal] for loc in self.result_locations.itertuples()], 3
+        )
+        self.calculation_results[["X", "Y", "Normaal"]] = np.repeat(x_y_norm, self.nloads, axis=0)
 
         # # Add columns for result
-        self.calculation_results[['Hs pharos', 'Tp pharos', 'Tm-1,0 pharos', 'Wave direction pharos']] = np.nan
+        self.calculation_results[["Hs pharos", "Tp pharos", "Tm-1,0 pharos", "Wave direction pharos"]] = np.nan
 
-        
         self.calculation_results.reset_index(inplace=True, drop=True)
-
 
     def fill_spectrum_table(self):
         """
@@ -168,45 +193,44 @@ class Pharos:
         # Add columns (directions)
         for col in self.theta:
             self.spectrum_table[col] = np.nan
-        
+
         # Set index (frequencies)
-        self.spectrum_table['f'] = self.f
-        self.spectrum_table.set_index('f', inplace=True)
-        
+        self.spectrum_table["f"] = self.f
+        self.spectrum_table.set_index("f", inplace=True)
+
         # Fill in values
         self.spectrum_table[self.theta] = self.flags
-        
 
     def load_from_project(self):
         """
         Load Pharos class (advanced calculation) from project
-        First some often 
+        First some often
         """
-        path_settings = self.settings['pharos']['paths']
+        path_settings = self.settings["pharos"]["paths"]
 
         # Initialize spectrum
-        if self.settings['pharos']['initialized']:
+        if self.settings["pharos"]["initialized"]:
             # Initializing will overwrite the checkes frequencties,
             # which is nog necessary on start up. So load and reset
-            freqs = self.settings['pharos']['frequencies']['checked'][:]
+            freqs = self.settings["pharos"]["frequencies"]["checked"][:]
             self.initialize()
-            self.settings['pharos']['frequencies']['checked'] = freqs
+            self.settings["pharos"]["frequencies"]["checked"] = freqs
 
         # Load spectrum table is it exists
-        spectrum_table_path = os.path.join(self.mainmodel.project.filedir, 'pharos_spectrum_table.pkl')
+        spectrum_table_path = os.path.join(self.mainmodel.project.filedir, "pharos_spectrum_table.pkl")
         if os.path.exists(spectrum_table_path):
             logger.info("..Loaded PHAROS spectrum table")
             self.spectrum_table = pd.read_pickle(spectrum_table_path)
 
         # Load calculation table if it exists
-        calculation_results_path = os.path.join(self.mainmodel.project.filedir, 'pharos_calculation_results.pkl')
+        calculation_results_path = os.path.join(self.mainmodel.project.filedir, "pharos_calculation_results.pkl")
         if os.path.exists(calculation_results_path):
             logger.info("..Loaded PHAROS calculation table")
             self.calculation_results.iloc[:, 0] = np.nan
             self.calculation_results.dropna(inplace=True)
 
             df = pd.read_pickle(calculation_results_path)
-            for name, col in df.reindex(columns=self.calculation_results.columns).iteritems():
+            for name, col in df.reindex(columns=self.calculation_results.columns).items():
                 self.calculation_results[name] = col
             self.calculation_results.index = df.index
 
@@ -214,10 +238,12 @@ class Pharos:
         """
         Method to save spectrum and calculation table to pickle
         """
-        if hasattr(self, 'calculation_results'):
-            self.calculation_results.to_pickle(os.path.join(self.mainmodel.project.filedir, 'pharos_calculation_results.pkl'))
-        if hasattr(self, 'spectrum_table'):
-            self.spectrum_table.to_pickle(os.path.join(self.mainmodel.project.filedir, 'pharos_spectrum_table.pkl'))
+        if hasattr(self, "calculation_results"):
+            self.calculation_results.to_pickle(
+                os.path.join(self.mainmodel.project.filedir, "pharos_calculation_results.pkl")
+            )
+        if hasattr(self, "spectrum_table"):
+            self.spectrum_table.to_pickle(os.path.join(self.mainmodel.project.filedir, "pharos_spectrum_table.pkl"))
 
     def initialize(self):
         """
@@ -230,48 +256,48 @@ class Pharos:
         """
 
         # Determine max Tp
-        factor_tp_tm = self.settings['pharos']['hydraulic loads']['factor Tm Tp']
-        
+        factor_tp_tm = self.settings["pharos"]["hydraulic loads"]["factor Tm Tp"]
+
         # Frequencies
-        if self.settings['pharos']['frequencies']['scale'] == 'lineair':
+        if self.settings["pharos"]["frequencies"]["scale"] == "lineair":
             self.f = np.linspace(
-                float(self.settings['pharos']['frequencies']['lowest']),
-                float(self.settings['pharos']['frequencies']['highest']),
-                self.settings['pharos']['frequencies']['number of bins']
+                float(self.settings["pharos"]["frequencies"]["lowest"]),
+                float(self.settings["pharos"]["frequencies"]["highest"]),
+                self.settings["pharos"]["frequencies"]["number of bins"],
             )
-        elif self.settings['pharos']['frequencies']['scale'] == 'logaritmisch':
+        elif self.settings["pharos"]["frequencies"]["scale"] == "logaritmisch":
             self.f = np.logspace(
-                float(np.log10(self.settings['pharos']['frequencies']['lowest'])),
-                float(np.log10(self.settings['pharos']['frequencies']['highest'])),
-                self.settings['pharos']['frequencies']['number of bins']
+                float(np.log10(self.settings["pharos"]["frequencies"]["lowest"])),
+                float(np.log10(self.settings["pharos"]["frequencies"]["highest"])),
+                self.settings["pharos"]["frequencies"]["number of bins"],
             )
         else:
-            raise ValueError('Scale not recognized, choose either lineair of logaritmisch.')
+            raise ValueError("Scale not recognized, choose either lineair of logaritmisch.")
 
         # Wave directions
-        step = self.settings['pharos']['wave directions']['bin size']
+        step = self.settings["pharos"]["wave directions"]["bin size"]
         self.theta = np.arange(
-            float(self.settings['pharos']['wave directions']['lowest']),
-            float(self.settings['pharos']['wave directions']['highest']),
-            float(step)
+            float(self.settings["pharos"]["wave directions"]["lowest"]),
+            float(self.settings["pharos"]["wave directions"]["highest"]),
+            float(step),
         )
 
         # Initialize Pharos spectrum
         self.spectrum = JONSWAPSpectrum(self.f, self.theta)
 
         # Calculate jonswap 2D
-        self.spread = self.settings['pharos']['2d wave spectrum']['spread']
-        self.gamma = self.settings['pharos']['2d wave spectrum']['gamma']
+        self.spread = self.settings["pharos"]["2d wave spectrum"]["spread"]
+        self.gamma = self.settings["pharos"]["2d wave spectrum"]["gamma"]
 
         self.determine_relevant_bins()
 
         # Check all frequencies with energy > 0.0
-        self.settings['pharos']['frequencies']['checked'] = list(
+        self.settings["pharos"]["frequencies"]["checked"] = list(
             itertools.compress(self.f, self.flags.sum(axis=1) > 0)
         )
 
         # Change settings
-        self.settings['pharos']['initialized'] = True
+        self.settings["pharos"]["initialized"] = True
 
     def determine_relevant_bins(self):
         """
@@ -282,20 +308,22 @@ class Pharos:
         energy_per_load = np.zeros((len(self.hydraulic_loads), len(self.f), len(self.theta)), dtype=bool)
 
         # Get Tp
-        if 'Tp' in self.hydraulic_loads.index:
-            Tp_array = self.hydraulic_loads['Tp'].values
+        if "Tp" in self.hydraulic_loads.index:
+            Tp_array = self.hydraulic_loads["Tp"].values
         else:
             # Determine Tp in case not present in database
-            Tp_array = self.hydraulic_loads['Tm-1,0'].values * self.settings['pharos']['hydraulic loads']['factor Tm Tp']
+            Tp_array = (
+                self.hydraulic_loads["Tm-1,0"].values * self.settings["pharos"]["hydraulic loads"]["factor Tm Tp"]
+            )
 
         # Assign minimum energy to variable
-        Smin = self.settings['pharos']['2d wave spectrum']['min energy']
+        Smin = self.settings["pharos"]["2d wave spectrum"]["min energy"]
 
         # Loop trough conditions
         for i, (Tp, (idx, hydraulic_load)) in enumerate(zip(Tp_array, self.hydraulic_loads.iterrows())):
 
-            Hm0 = hydraulic_load['Hs']
-            Theta = hydraulic_load['Wave direction']
+            Hm0 = hydraulic_load["Hs"]
+            Theta = hydraulic_load["Wave direction"]
 
             # Only if energy present
             if Hm0 != 0:
@@ -307,13 +335,12 @@ class Pharos:
                     Hm0=Hm0,
                     Tp=Tp,
                     Theta=Theta,
-                    spread=self.spread
+                    spread=self.spread,
                 )
 
                 energy_per_load[i] = S > Smin
-        
+
         self.flags = np.sum(energy_per_load, axis=0)
-        
 
     def generate(self, progress_function=None):
         """
@@ -329,23 +356,23 @@ class Pharos:
         """
 
         # Check if Pharos folder is defined
-        if not self.settings['pharos']['paths']['pharos folder']:
-            raise AttributeError('Pharos folder is not defined')
+        if not self.settings["pharos"]["paths"]["pharos folder"]:
+            raise AttributeError("Pharos folder is not defined")
 
-        if not self.settings['pharos']['paths']['schematisation folder']:
-            raise AttributeError('Pharos schematisationsfolder is not defined')
+        if not self.settings["pharos"]["paths"]["schematisation folder"]:
+            raise AttributeError("Pharos schematisationsfolder is not defined")
 
-        pharos_settings = self.settings['pharos']
-        for _, directions in pharos_settings['schematisations'].items():
+        pharos_settings = self.settings["pharos"]
+        for _, directions in pharos_settings["schematisations"].items():
             # Continue if no selected directions
             if not directions:
                 continue
-            
+
         # Create input files
         self.create_input_files(progress_function=progress_function)
 
         # Set finished on True
-        self.settings['pharos']['input_generated'] = True
+        self.settings["pharos"]["input_generated"] = True
 
     def calc_wave_length(self, h, T):
         """
@@ -353,7 +380,7 @@ class Pharos:
         """
         # Calculate omega
         omega = 2 * np.pi / T
-        
+
         # Define function to optimize
         def calc_f(k, g, h, omega):
             f = g * k * np.tanh(k * h) - omega ** 2
@@ -361,18 +388,12 @@ class Pharos:
 
         # Returns wavenumber of the gravity wave dispersion relation using
         # newtons method. The initial guess is shallow water wavenumber.
-        k = newton(
-            calc_f,
-            x0=omega / np.sqrt(g),
-            args=(g, h, omega),
-            maxiter=100
-        )
-            
+        k = newton(calc_f, x0=omega / np.sqrt(g), args=(g, h, omega), maxiter=100)
+
         # Calculate wave length
         wave_length = 2 * np.pi / k
 
         return wave_length
-
 
     def create_input_files(self, progress_function=None):
         """
@@ -400,27 +421,41 @@ class Pharos:
         self.get_proj_and_grid()
 
         # For each schematisation
-        for schematisation, directions in self.settings['pharos']['schematisations'].items():
+        for schematisation, directions in self.settings["pharos"]["schematisations"].items():
 
             # Pharos schematisation
-            src_folder = os.path.join(self.settings['pharos']['paths']['schematisation folder'], schematisation)
-            
+            src_folder = os.path.join(self.settings["pharos"]["paths"]["schematisation folder"], schematisation)
+
             # Zoek de template
-            pharcon_src = [os.path.join(src_folder, item) for item in os.listdir(src_folder) if 'pharcon' in item and item.endswith('.inp')]
+            pharcon_src = [
+                os.path.join(src_folder, item)
+                for item in os.listdir(src_folder)
+                if "pharcon" in item and item.endswith(".inp")
+            ]
             if len(pharcon_src) == 0:
-                raise OSError('Geen pharcon template gevonden voor schematisatie "{}".\nZoeklocatie: {}'.format(schematisation, src_folder))
+                raise OSError(
+                    'Geen pharcon template gevonden voor schematisatie "{}".\nZoeklocatie: {}'.format(
+                        schematisation, src_folder
+                    )
+                )
             elif len(pharcon_src) > 1:
-                raise OSError('Meer dan één pharcon template gevonden voor schematisatie: {}.\nZoeklocatie: {}'.format(schematisation, src_folder))
-            with open(pharcon_src[0], 'r') as f:
+                raise OSError(
+                    "Meer dan één pharcon template gevonden voor schematisatie: {}.\nZoeklocatie: {}".format(
+                        schematisation, src_folder
+                    )
+                )
+            with open(pharcon_src[0], "r") as f:
                 pharcon_template = f.read()
 
             # Destination paths
-            dst_folder = os.path.join(self.settings['pharos']['paths']['pharos folder'], 'calculations', schematisation)
+            dst_folder = os.path.join(
+                self.settings["pharos"]["paths"]["pharos folder"], "calculations", schematisation
+            )
             if not os.path.exists(dst_folder):
                 os.makedirs(dst_folder)
-            pharos_pha_path = os.path.join(dst_folder,  'projects.pha')
+            pharos_pha_path = os.path.join(dst_folder, "projects.pha")
 
-            # Copy schematisation        
+            # Copy schematisation
             self.pharosio.create_pharos_folder(src_folder, dst_folder)
 
             gstat = 10
@@ -431,9 +466,9 @@ class Pharos:
 
             # Write bat files
             self.pharosio.write_bat_files(schematisation)
-            
+
             # Write first lines of pharos.pha file
-            with open(pharos_pha_path, 'w') as pharos_pha:
+            with open(pharos_pha_path, "w") as pharos_pha:
                 pharos_pha.write("@@PROJECT {}\n".format(self.project_names[schematisation]))
                 pharos_pha.write("@@PDESC \n")
                 pharos_pha.write("@@GRID {}\n".format(self.grid_names[schematisation]))
@@ -441,14 +476,13 @@ class Pharos:
                 pharos_pha.write("@@GSTAT {}\n".format(gstat))
                 pharos_pha.write("@@FDIR {}\n".format(os.path.normpath(os.path.dirname(dst_folder))))
 
-
             # Create pharcon
             pharcon_file = pharcon_template[:]
             # Replace line in pharos template
-            first_line_entries = pharcon_file[:pharcon_file.find('\n')].strip().split()
+            first_line_entries = pharcon_file[: pharcon_file.find("\n")].strip().split()
 
             # Find the line that follows the settings and the wave periods
-            split_lines = re.findall('(\n\s*[0-9]+ +[0-9]+\s*\n)', pharcon_file)
+            split_lines = re.findall("(\n\s*[0-9]+ +[0-9]+\s*\n)", pharcon_file)
             second_line, bottom_line = split_lines[0], split_lines[1]
 
             for frequency, water_level, sch, direction in combinations:
@@ -456,51 +490,65 @@ class Pharos:
                     continue
 
                 # 1. Peak period
-                first_line_entries[0] = '{:.4f}'.format(1./frequency)
+                first_line_entries[0] = "{:.4f}".format(1.0 / frequency)
                 # 2. Number of frequencies (0, since no spectrum)
-                first_line_entries[1] = '0'
+                first_line_entries[1] = "0"
                 # 3. Number of wave directions
-                first_line_entries[2] = '1'
+                first_line_entries[2] = "1"
                 # 4. ?
                 # 5. Water level
-                first_line_entries[4] = '{:.4f}'.format(water_level)
+                first_line_entries[4] = "{:.4f}".format(water_level)
 
                 # Determine scenario name
-                run = 'T{:.3f}D{:05.1f}H{:.3f}'.format(1./frequency, direction, water_level).replace('.', 'p')
+                run = "T{:.3f}D{:05.1f}H{:.3f}".format(1.0 / frequency, direction, water_level).replace(".", "p")
 
                 # Add to projects.pha
-                with open(pharos_pha_path, 'a') as pharos_pha:
+                with open(pharos_pha_path, "a") as pharos_pha:
                     pharos_pha.write("@@RUN {}\n".format(run))
-                    pharos_pha.write("@@RDESC Direction:{:.1f} Frequency:{:.3f} /s WaterLevel:{:.3f} m\n".format(direction, frequency, water_level))
+                    pharos_pha.write(
+                        "@@RDESC Direction:{:.1f} Frequency:{:.3f} /s WaterLevel:{:.3f} m\n".format(
+                            direction, frequency, water_level
+                        )
+                    )
                     pharos_pha.write("@@RSTAT {}\n".format(rstat))
 
                 # Add first line and the rest
                 pharcon_file = pharcon_template[:]
-                pharcon_file = ' '.join(first_line_entries) + pharcon_file[pharcon_file.find(second_line):pharcon_file.find(bottom_line)]
-                
-                # Find end of object definition
-                endstring = '123456789012345678901234567890'
-                pharcon_file += '\n{}\n1\n{:.4f} 1.0000 0.0000\n'.format(bottom_line.strip(), nau2car(direction))+'\n'.join([endstring]*3)+'\n'
+                pharcon_file = (
+                    " ".join(first_line_entries)
+                    + pharcon_file[pharcon_file.find(second_line) : pharcon_file.find(bottom_line)]
+                )
 
-                # Write to file    
-                pharcon_dst = os.path.join(dst_folder, '{}_pharcon_{}_{}.inp'.format(self.project_names[schematisation], self.grid_names[schematisation], run))
-                with open(pharcon_dst, 'w') as f:
+                # Find end of object definition
+                endstring = "123456789012345678901234567890"
+                pharcon_file += (
+                    "\n{}\n1\n{:.4f} 1.0000 0.0000\n".format(bottom_line.strip(), nau2car(direction))
+                    + "\n".join([endstring] * 3)
+                    + "\n"
+                )
+
+                # Write to file
+                pharcon_dst = os.path.join(
+                    dst_folder,
+                    "{}_pharcon_{}_{}.inp".format(
+                        self.project_names[schematisation], self.grid_names[schematisation], run
+                    ),
+                )
+                with open(pharcon_dst, "w") as f:
                     f.write(pharcon_file)
 
                 # Write input file
-                input_file = 'project:{project}\ngrid:{grid}\nrun:{run}\nradius:0.15 %radius\n1 %images\ndirections:0\nfrequencies:0\ncordinates:coordinates.csv'.format(
-                    project=self.project_names[schematisation],
-                    grid=self.grid_names[schematisation],
-                    run=run
+                input_file = "project:{project}\ngrid:{grid}\nrun:{run}\nradius:0.15 %radius\n1 %images\ndirections:0\nfrequencies:0\ncordinates:coordinates.csv".format(
+                    project=self.project_names[schematisation], grid=self.grid_names[schematisation], run=run
                 )
-                input_file_dst = os.path.join(dst_folder, 'input_{}.txt'.format(run))
-                with open(input_file_dst, 'w') as f:
+                input_file_dst = os.path.join(dst_folder, "input_{}.txt".format(run))
+                with open(input_file_dst, "w") as f:
                     f.write(input_file)
 
                 # Progress bar
                 if progress_function is not None:
                     progress_function(1)
-    
+
     def get_iterables(self):
         """
         Return frequencies, water levels, schematisations and directions
@@ -509,18 +557,18 @@ class Pharos:
         # Get frequencies, find nearest values in self for exact match
         frequencies = []
         for frequency in self.f:
-            if any((isclose(f, frequency) for f in self.settings['pharos']['frequencies']['checked'])):
+            if any((isclose(f, frequency) for f in self.settings["pharos"]["frequencies"]["checked"])):
                 frequencies.append(frequency)
 
         # Get water levels
-        water_levels = self.settings['pharos']['water levels']['checked']
+        water_levels = self.settings["pharos"]["water levels"]["checked"]
         # Combinations of schematisations and directions
         schematisations, directions = [], []
-        for sch, dirs in self.settings['pharos']['schematisations'].items():
+        for sch, dirs in self.settings["pharos"]["schematisations"].items():
             for d in dirs:
                 schematisations.append(sch)
                 directions.append(d)
-        
+
         return frequencies, water_levels, schematisations, directions
 
     def get_combinations(self):
@@ -532,7 +580,7 @@ class Pharos:
         # Get iterables
         iterables = self.get_iterables()
         # Get schematisations from settings (dictionary with directions)
-        schematisations = self.settings['pharos']['schematisations']
+        schematisations = self.settings["pharos"]["schematisations"]
         # Create combinations, and select unique values
         combinations = []
 
@@ -547,10 +595,10 @@ class Pharos:
             # Skip if frequency-direction bin has no energy
             if not self.spectrum_table.at[frequency, direction]:
                 continue
-            
+
             # Add to combinations
             combinations.append([frequency, water_level, schematisation, direction])
-       
+
         return combinations
 
     def get_proj_and_grid(self):
@@ -558,27 +606,27 @@ class Pharos:
         Method to determine the project name and grid name for
         the schematisations in the settings
         """
-        for schematisation in self.settings['pharos']['schematisations'].keys():
+        for schematisation in self.settings["pharos"]["schematisations"].keys():
             # Look for bottom file
-            sch_folder = os.path.join(self.settings['pharos']['paths']['schematisation folder'], schematisation)
+            sch_folder = os.path.join(self.settings["pharos"]["paths"]["schematisation folder"], schematisation)
             for f in os.listdir(sch_folder):
-                if '_editgr_' in f:
+                if "_editgr_" in f:
                     editgrfile = f
                     break
             else:
                 raise OSError('No bottomfile found in "{}" to determine project and grid name.'.format(sch_folder))
 
             # Derive names from file
-            project, grid = os.path.splitext(editgrfile)[0].split('_editgr_')
+            project, grid = os.path.splitext(editgrfile)[0].split("_editgr_")
 
             # Assign to dictionaries
             self.project_names[schematisation] = project
-            self.grid_names[schematisation] = grid 
+            self.grid_names[schematisation] = grid
 
     def read_output_locations(self):
         """
         Method to read the location-coordinates from a file
-        
+
         Parameters
         ----------
         json_output : string
@@ -594,31 +642,35 @@ class Pharos:
         result_loc_crds = np.vstack([pt.geometry.coords[0] for pt in self.result_locations.itertuples()])
 
         # Correct for PHAROS model offset
-        result_loc_crds[:, 0] += self.settings['pharos']['transformation']['dx']
-        result_loc_crds[:, 1] += self.settings['pharos']['transformation']['dy']
+        result_loc_crds[:, 0] += self.settings["pharos"]["transformation"]["dx"]
+        result_loc_crds[:, 1] += self.settings["pharos"]["transformation"]["dy"]
 
         for schematisation in schematisations:
 
-            dst_folder = os.path.join(self.settings['pharos']['paths']['pharos folder'], 'calculations', schematisation)
-            
+            dst_folder = os.path.join(
+                self.settings["pharos"]["paths"]["pharos folder"], "calculations", schematisation
+            )
+
             # Read coordinate file
-            with open(os.path.join(dst_folder, 'coordinates.csv'), 'r') as f:
+            with open(os.path.join(dst_folder, "coordinates.csv"), "r") as f:
                 lines = f.readlines()
-            
+
             # For coordinate line in file
             for line in lines:
 
                 # Get coordinate in result locations
-                crd = np.asarray(line.split(','), dtype=float)
+                crd = np.asarray(line.split(","), dtype=float)
                 # Find distances between file location and result locations
                 dists = np.hypot(*(result_loc_crds - crd).T)
                 if dists.min() > 2.0:
-                    logger.warning('The distance between a Pharos location and a HB Havens location is larger than 2 meters.')
+                    logger.warning(
+                        "The distance between a Pharos location and a HB Havens location is larger than 2 meters."
+                    )
 
                 # Add file (line) location to dictionary, be looking for the argmin of the distance
                 # TODO: Netjes oplossen
                 self.output_location_indices[(int(round(crd[0])), int(round(crd[1])))] = dists.argmin()
-            
+
     def read_calculation_results(self, progress_function=None):
         """
         Method to read PHAROS RDPA postprocessed output
@@ -641,22 +693,19 @@ class Pharos:
         for i, (frequency, water_level, schematisation, direction) in enumerate(self.get_combinations()):
             # output folder
             dst_folder = os.path.join(
-                self.settings['pharos']['paths']['pharos folder'],
-                'calculations',
-                schematisation,
-                'output'
+                self.settings["pharos"]["paths"]["pharos folder"], "calculations", schematisation, "output"
             )
-            
+
             # output file
-            run = 'T{:.3f}D{:05.1f}H{:.3f}'.format(1./frequency, direction, water_level)
-            json_file = os.path.join(dst_folder, '{}_admin_{}_{}.json'.format(
-                self.project_names[schematisation],
-                self.grid_names[schematisation], run)
+            run = "T{:.3f}D{:05.1f}H{:.3f}".format(1.0 / frequency, direction, water_level)
+            json_file = os.path.join(
+                dst_folder,
+                "{}_admin_{}_{}.json".format(self.project_names[schematisation], self.grid_names[schematisation], run),
             )
 
             # Read json output
             try:
-                with open(json_file, 'r') as f:
+                with open(json_file, "r") as f:
                     json_output = json.load(f)
             except Exception as e:
                 raise IOError(f'Failed reading Pharos output file: "{os.path.split(json_file)[-1]}".\n{e}')
@@ -665,40 +714,48 @@ class Pharos:
             for locidx, loc_output in enumerate(json_output):
                 # Find the location id in the list
                 locidx = self.output_location_indices[
-                    (int(round(loc_output['input_coordinates']['x'])), int(round(loc_output['input_coordinates']['y'])))]
+                    (
+                        int(round(loc_output["input_coordinates"]["x"])),
+                        int(round(loc_output["input_coordinates"]["y"])),
+                    )
+                ]
 
                 # Get waves
                 count = 0
-                for wave in loc_output['wave_heights']:
+                for wave in loc_output["wave_heights"]:
                     # Skip if no energy in wave
-                    if wave['H'] == 0:
+                    if wave["H"] == 0:
                         continue
-                    elif wave['H'] > 3.0:
-                        logger.warning('H > 3.0, assuming invalid, thus skipping.')
+                    elif wave["H"] > 3.0:
+                        logger.warning("H > 3.0, assuming invalid, thus skipping.")
                         continue
-                    elif wave['H'] > 2.0:
-                        logger.warning('H > 2.0, perhaps invalid, but not skipping.')
-                    
+                    elif wave["H"] > 2.0:
+                        logger.warning("H > 2.0, perhaps invalid, but not skipping.")
+
                     # Add wave
-                    waves[water_level].append([frequency, direction, locidx, count, wave['H'], wave['naut']])
+                    waves[water_level].append([frequency, direction, locidx, count, wave["H"], wave["naut"]])
                     count += 1
 
             if progress_function is not None:
                 progress_function(1)
-    
-                    
+
         # Make dataframe from waves
         self.waves = {}
         for wlev, wavelist in waves.items():
             # Create dataframe
-            self.waves[wlev] = pd.DataFrame(wavelist, columns=['frequency', 'outer_direction', 'locidx', 'wave_id', 'H', 'inner_direction'])
+            self.waves[wlev] = pd.DataFrame(
+                wavelist, columns=["frequency", "outer_direction", "locidx", "wave_id", "H", "inner_direction"]
+            )
             # Add direction bins
-            self.waves[wlev]['inner_dir_bin'] = np.digitize((self.waves[wlev]['inner_direction'] + 0.5 * binwidth) % 360, self.theta + binwidth)
+            self.waves[wlev]["inner_dir_bin"] = np.digitize(
+                (self.waves[wlev]["inner_direction"] + 0.5 * binwidth) % 360, self.theta + binwidth
+            )
             # Add frequency bins
-            self.waves[wlev]['frequency_bin'] = list(map({f: i for f, i in zip(self.f, np.arange(len(self.f)))}.get, self.waves[wlev]['frequency']))
+            self.waves[wlev]["frequency_bin"] = list(
+                map({f: i for f, i in zip(self.f, np.arange(len(self.f)))}.get, self.waves[wlev]["frequency"])
+            )
             # Set index
-            self.waves[wlev].set_index(['frequency', 'outer_direction'], inplace=True)
-        
+            self.waves[wlev].set_index(["frequency", "outer_direction"], inplace=True)
 
     def _add_zeros(self, results, winddirection, progress_function):
         zeros = np.zeros((self.nlocations, 4))
@@ -707,8 +764,7 @@ class Pharos:
         # Set progress bar
         if progress_function is not None:
             progress_function(10)
-    
-        
+
     def assign_energies(self, progress_function=None):
         """
         Method to assign energies to hydraulic loads
@@ -716,20 +772,20 @@ class Pharos:
         1. Determine for each wave condition what the input energy in the specific bin is
         2. Calculate the wave height from the resulting energy in the spectra at the locations
 
-        What if one location 
+        What if one location
 
         """
         # import timeit
         # st = timeit.default_timer()
-        
+
         combinations = self.get_iterables()
 
-        dijknormalen = self.mainmodel.schematisation.result_locations['Normaal'].values
-        
+        dijknormalen = self.mainmodel.schematisation.result_locations["Normaal"].values
+
         frequencies = np.unique(combinations[0])
         water_levels = np.unique(combinations[1])
         directions = np.unique(combinations[3])
-        
+
         freq_indices = np.in1d(self.f, frequencies)
         direction_indices = np.in1d(self.theta, directions)
 
@@ -741,121 +797,121 @@ class Pharos:
         f = (f[1:] + f[:-1]) / 2
         f_bins = np.diff(f)
         dtheta = np.deg2rad(self.theta[1] - self.theta[0])
-            
+
         # Create empty list to collect results per load combination
         results = []
 
         for hydraulicloadid in sorted(self.hydraulicloadids):
-        
+
             # Get load combination from hydraulic loads
             loadcombination = self.hydraulic_loads.loc[hydraulicloadid]
 
             # If water level is not calculated, set zero
-            if loadcombination['Water level'] not in water_levels:
-                
+            if loadcombination["Water level"] not in water_levels:
+
                 # Wave parameters are 0, wave direction = wind direction
-                self._add_zeros(results, loadcombination['Wind direction'], progress_function)
+                self._add_zeros(results, loadcombination["Wind direction"], progress_function)
                 continue
 
             # Get Tp
-            if 'Tp' in loadcombination:
-                Tp = loadcombination['Tp']
+            if "Tp" in loadcombination:
+                Tp = loadcombination["Tp"]
             else:
-                Tp = loadcombination['Tm-1,0'] * self.settings['pharos']['hydraulic loads']['factor Tm Tp']
+                Tp = loadcombination["Tm-1,0"] * self.settings["pharos"]["hydraulic loads"]["factor Tm Tp"]
 
             # Determine spectrum for condition
-            if loadcombination['Hs'] == 0.0:
+            if loadcombination["Hs"] == 0.0:
                 # Wave parameters are 0, wave direction = wind direction
-                self._add_zeros(results, loadcombination['Wind direction'], progress_function)
+                self._add_zeros(results, loadcombination["Wind direction"], progress_function)
                 continue
 
-            S_1d = jonswap(self.f,
-                Hm0=loadcombination['Hs'],
-                Tp=Tp,
-                gamma=self.gamma
-            )
+            S_1d = jonswap(self.f, Hm0=loadcombination["Hs"], Tp=Tp, gamma=self.gamma)
 
             # Calculate energy spectrum and convert the energy densities to energies
-            energy_spectrum_outside = jonswap_2d(
-                f=self.f,
-                theta=self.theta,
-                S_1d=S_1d,
-                Hm0=loadcombination['Hs'],
-                Tp=Tp,
-                Theta=loadcombination['Wave direction'],
-                spread=self.spread
-            ) * f_bins[:, None] * dtheta
+            energy_spectrum_outside = (
+                jonswap_2d(
+                    f=self.f,
+                    theta=self.theta,
+                    S_1d=S_1d,
+                    Hm0=loadcombination["Hs"],
+                    Tp=Tp,
+                    Theta=loadcombination["Wave direction"],
+                    spread=self.spread,
+                )
+                * f_bins[:, None]
+                * dtheta
+            )
 
             # Set energies where frequencies and directions are not defined (since not calculated) to zero
             energy_spectrum_outside[~freq_indices, :] = 0.0
             energy_spectrum_outside[:, ~direction_indices] = 0.0
 
             # Make a selection of frequentie direction tuples
-            indices = np.where(energy_spectrum_outside > self.settings['pharos']['2d wave spectrum']['min energy'])
-            
+            indices = np.where(energy_spectrum_outside > self.settings["pharos"]["2d wave spectrum"]["min energy"])
+
             # If no energies in this combination of frequencies and bins
             if not np.size(indices):
                 # Wave parameters are 0, wave direction = wind direction
-                self._add_zeros(results, loadcombination['Wind direction'], progress_function)
+                self._add_zeros(results, loadcombination["Wind direction"], progress_function)
                 continue
 
             tuples = list(zip(self.f[indices[0]], self.theta[indices[1]]))
-            
+
             # Create dataframe with energies to join to dataframe with reflection waves
             energydf = pd.DataFrame(
                 data=energy_spectrum_outside[indices],
-                index=pd.MultiIndex.from_tuples(
-                    tuples,
-                    names=['frequency', 'outer_direction']
-                ),
-                columns=['outer_energy']
+                index=pd.MultiIndex.from_tuples(tuples, names=["frequency", "outer_direction"]),
+                columns=["outer_energy"],
             )
-            
+
             # Select relevant part of model results
-            wavedf = self.waves[loadcombination['Water level']].loc[
-                tuples, ['locidx', 'inner_dir_bin', 'frequency_bin', 'H']].join(energydf)
-            
+            wavedf = (
+                self.waves[loadcombination["Water level"]]
+                .loc[tuples, ["locidx", "inner_dir_bin", "frequency_bin", "H"]]
+                .join(energydf)
+            )
+
             # Determine energy inside harbor
-            wavedf['inner_energy'] = wavedf['outer_energy'] * wavedf['H'] ** 2
-            
+            wavedf["inner_energy"] = wavedf["outer_energy"] * wavedf["H"] ** 2
+
             # Reset energy to zero again
             energy[:, :, :] = 0.0
-            
+
             # Add all energies to spectrum
             for row in wavedf.itertuples():
                 energy[row.locidx, row.frequency_bin, row.inner_dir_bin] += row.inner_energy
-            
+
             # Create spectrum
-            inner_spectrum = Spectrum2D(
-                frequencies=self.f,
-                directions=self.theta,
-                energy=energy[np.newaxis, :, :, :]
-            )
+            inner_spectrum = Spectrum2D(frequencies=self.f, directions=self.theta, energy=energy[np.newaxis, :, :, :])
 
             # Correct incoming waves for levee normals
-            if self.settings['pharos']['use_incoming_wave_factors']:    
+            if self.settings["pharos"]["use_incoming_wave_factors"]:
                 fac = incoming_wave_factors(self.theta, dijknormalen)
-                inner_spectrum.energy = np.einsum('ijkl,jl->ijkl', inner_spectrum.energy, fac)
+                inner_spectrum.energy = np.einsum("ijkl,jl->ijkl", inner_spectrum.energy, fac)
 
             # Determine wave parameters and add to result
-            results.append(np.r_[inner_spectrum.Hm0(), inner_spectrum.Tp_smooth(), inner_spectrum.Tmm10(), inner_spectrum.Theta0()].T)
-            
+            results.append(
+                np.r_[
+                    inner_spectrum.Hm0(), inner_spectrum.Tp_smooth(), inner_spectrum.Tmm10(), inner_spectrum.Theta0()
+                ].T
+            )
+
             if progress_function is not None:
                 progress_function(10)
 
         # Before appending the results, make sure the locations are sorted such that the
         # locations are in the order that the results are read.
         # This is the location id, not the nae, since the order does not have to be alphabetic!
-        self.calculation_results['before_order'] = list(range(len(self.calculation_results)))
-        self.calculation_results.sort_values(by=['HydraulicLoadId', 'LocationId'], inplace=True)
-        columns = ['Hs pharos', 'Tp pharos', 'Tm-1,0 pharos', 'Wave direction pharos']
+        self.calculation_results["before_order"] = list(range(len(self.calculation_results)))
+        self.calculation_results.sort_values(by=["HydraulicLoadId", "LocationId"], inplace=True)
+        columns = ["Hs pharos", "Tp pharos", "Tm-1,0 pharos", "Wave direction pharos"]
         self.calculation_results[columns] = np.vstack(results).round(3)
-        self.calculation_results.sort_values(by='before_order', inplace=True)
-        self.calculation_results.drop('before_order', axis=1, inplace=True)
+        self.calculation_results.sort_values(by="before_order", inplace=True)
+        self.calculation_results.drop("before_order", axis=1, inplace=True)
 
         if np.isnan(self.calculation_results[columns].values).any():
-            raise ValueError('NaN values in PHAROS-data.')
-        
+            raise ValueError("NaN values in PHAROS-data.")
+
         # Combine results with SWAN
         self.combine_with_swan()
 
@@ -866,49 +922,61 @@ class Pharos:
         """
 
         # Copy results from calculation results
-        pharos_columns = ['Hs pharos', 'Tp pharos', 'Tm-1,0 pharos', 'Wave direction pharos']
-        merge_columns = ['Location', 'Load combination']
-        
+        pharos_columns = ["Hs pharos", "Tp pharos", "Tm-1,0 pharos", "Wave direction pharos"]
+        merge_columns = ["Location", "Load combination"]
+
         # Merge with swan final results
         swan_results = self.mainmodel.swan.calculation_results
-        swan_columns = ['Hm0 swan', 'Tm-1,0 swan', 'Tp swan', 'Wave direction swan']
-        
-        if np.isnan(swan_results[swan_columns].values).any():
-            raise ValueError('NaN values in SWAN-data.')
+        swan_columns = ["Hm0 swan", "Tm-1,0 swan", "Tp swan", "Wave direction swan"]
 
-        self.calculation_results[swan_columns] = self.calculation_results[merge_columns].merge(
-            swan_results[swan_columns + merge_columns],
-            on=merge_columns
-        ).drop(merge_columns, axis=1).values
+        if pd.isna(swan_results[swan_columns].values).any():
+            raise ValueError("NaN values in SWAN-data.")
+
+        self.calculation_results[swan_columns] = (
+            self.calculation_results[merge_columns]
+            .merge(swan_results[swan_columns + merge_columns], on=merge_columns)
+            .drop(merge_columns, axis=1)
+            .values
+        )
 
         if np.isnan(self.calculation_results[swan_columns + pharos_columns].values).any():
-            raise ValueError('NaN values in combined SWAN and PHAROS data. This indicates an error in merging the results from both models.')
+            raise ValueError(
+                "NaN values in combined SWAN and PHAROS data. This indicates an error in merging the results from both models."
+            )
 
         # Calculate combined energies
-        f_swan, f_pharos = (self.calculation_results[['Hm0 swan', 'Hs pharos']].fillna(0.0) ** 2).values.T
-        
+        f_swan, f_pharos = (self.calculation_results[["Hm0 swan", "Hs pharos"]].fillna(0.0) ** 2).values.T
+
         # Calculate combined significant wave height
-        self.calculation_results['Hs totaal'] = np.hypot(*self.calculation_results[['Hm0 swan', 'Hs pharos']].values.T)
+        self.calculation_results["Hs totaal"] = np.hypot(*self.calculation_results[["Hm0 swan", "Hs pharos"]].values.T)
 
         # Calculate combined Tm -1,0
         f_total = np.sum([f_swan, f_pharos], axis=0)
         idx = f_total > 0.0
-        self.calculation_results.loc[idx, 'Tm-1,0 totaal'] = np.round(
-            (self.calculation_results.loc[idx, 'Tm-1,0 swan'] * f_swan[idx] + self.calculation_results.loc[idx, 'Tm-1,0 pharos'] * f_pharos[idx]) / f_total[idx], 3)
-        self.calculation_results.loc[~idx, 'Tm-1,0 totaal'] = 0.0
-        
+        self.calculation_results.loc[idx, "Tm-1,0 totaal"] = np.round(
+            (
+                self.calculation_results.loc[idx, "Tm-1,0 swan"] * f_swan[idx]
+                + self.calculation_results.loc[idx, "Tm-1,0 pharos"] * f_pharos[idx]
+            )
+            / f_total[idx],
+            3,
+        )
+        self.calculation_results.loc[~idx, "Tm-1,0 totaal"] = 0.0
+
         # Calculate combined Tp
-        self.calculation_results['Tp totaal'] = np.round(np.nanmax(self.calculation_results[['Tp swan', 'Tp pharos']], axis=1), 3)
-        
+        self.calculation_results["Tp totaal"] = np.round(
+            np.nanmax(self.calculation_results[["Tp swan", "Tp pharos"]], axis=1), 3
+        )
+
         # Calculate combined wave direction
-        self.calculation_results['Wave direction totaal'] = average_angle(
-            angles=self.calculation_results[['Wave direction swan', 'Wave direction pharos']].values,
+        self.calculation_results["Wave direction totaal"] = average_angle(
+            angles=self.calculation_results[["Wave direction swan", "Wave direction pharos"]].values,
             factors=np.vstack([f_swan, f_pharos]).T,
-            degrees=True
+            degrees=True,
         )
 
         # Round to three decimals
-        combined_columns = ['Hs totaal', 'Tm-1,0 totaal', 'Tp totaal', 'Wave direction totaal']
+        combined_columns = ["Hs totaal", "Tm-1,0 totaal", "Tp totaal", "Wave direction totaal"]
         self.calculation_results[combined_columns] = self.calculation_results[combined_columns].round(3)
 
 
@@ -998,21 +1066,22 @@ class WavesModel:
     print("  = %s" % wav.H)
 
     """
+
     def __init__(self, h, T=None, L=None, thetao=None, Ho=None, lat=None):
-        self.T = np.asarray(T, dtype=np.float)
-        self.L = np.asarray(L, dtype=np.float)
-        self.Ho = np.asarray(Ho, dtype=np.float)
-        self.lat = np.asarray(lat, dtype=np.float)
-        self.thetao = np.asarray(thetao, dtype=np.float)
+        self.T = np.asarray(T, dtype=np.float32)
+        self.L = np.asarray(L, dtype=np.float32)
+        self.Ho = np.asarray(Ho, dtype=np.float32)
+        self.lat = np.asarray(lat, dtype=np.float32)
+        self.thetao = np.asarray(thetao, dtype=np.float32)
 
         if isinstance(h, str):
             if L is not None:
-                if h == 'deep':
-                    self.h = self.L / 2.
-                elif h == 'shallow':
+                if h == "deep":
+                    self.h = self.L / 2.0
+                elif h == "shallow":
                     self.h = self.L * 0.05
         else:
-            self.h = np.asarray(h, dtype=np.float)
+            self.h = np.asarray(h, dtype=np.float32)
 
         if lat is None:
             g = 9.81  # Default gravity.
@@ -1030,18 +1099,16 @@ class WavesModel:
             f = g * self.k * np.tanh(self.k * self.h) - self.omega ** 2
 
             while np.abs(f.max()) > 1e-10:
-                dfdk = (g * self.k * self.h *
-                        (1 / (np.cosh(self.k * self.h))) ** 2 +
-                        g * np.tanh(self.k * self.h))
+                dfdk = g * self.k * self.h * (1 / (np.cosh(self.k * self.h))) ** 2 + g * np.tanh(self.k * self.h)
                 self.k = self.k - f / dfdk
                 # FIXME:
                 f = g * self.k * np.tanh(self.k * self.h) - self.omega ** 2
 
             self.L = 2 * np.pi / self.k
             if isinstance(h, str):
-                if h == 'deep':
-                    self.h = self.L / 2.
-                elif h == 'shallow':
+                if h == "deep":
+                    self.h = self.L / 2.0
+                elif h == "shallow":
                     self.h = self.L * 0.05
         else:
             self.Lo = self.L / np.tanh(2 * np.pi * self.h / self.L)
@@ -1062,10 +1129,8 @@ class WavesModel:
             self.theta = np.NaN
             self.Kr = np.NaN
         if thetao is not None:
-            self.theta = np.rad2deg(np.asin(self.C / self.Co *
-                                            np.sin(np.deg2rad(self.thetao))))
-            self.Kr = np.sqrt(np.cos(np.deg2rad(self.thetao)) /
-                              np.cos(np.deg2rad(self.theta)))
+            self.theta = np.rad2deg(np.asin(self.C / self.Co * np.sin(np.deg2rad(self.thetao))))
+            self.Kr = np.sqrt(np.cos(np.deg2rad(self.thetao)) / np.cos(np.deg2rad(self.theta)))
 
         if Ho is None:
             self.H = np.NaN
