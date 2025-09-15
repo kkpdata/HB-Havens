@@ -141,7 +141,15 @@ class CustomNavigationToolbar(NavigationToolbar2QT):
         
         # update the background
         self.update_func(0, limits=bounds)
-
+    
+    def set_message(self, s):
+        # Disable coordinate/RGB display
+        try:
+            s = s.split('\n')[0]
+        except:
+            pass
+        
+        super().set_message(s)
 
 class ExtendedLineEdit(QtWidgets.QWidget):
 
@@ -207,8 +215,6 @@ class ExtendedLineEdit(QtWidgets.QWidget):
         if not isinstance(value, str):
             value = str(value)
         self.LineEdit.setText(value)
-
-
 
 class SpinBoxInputLine(QtWidgets.QWidget):
 
@@ -360,7 +366,6 @@ class ParameterInputLine(QtWidgets.QWidget):
             if item.widget():
                 item.widget().setEnabled(enabled)
         
-
 class ParameterLabel(QtWidgets.QWidget):
 
     def __init__(self, label, labelwidth=None, value=None, unit=None):
@@ -653,7 +658,6 @@ class AbstractTabWidget(QtWidgets.QWidget):
         """
         pass
 
-
 class DataFrameWidget(QtWidgets.QTableView):
     """
     Widget to view (and edit) a pandas DataFrame
@@ -713,7 +717,7 @@ class DataFrameWidget(QtWidgets.QTableView):
             row = self.dataframe[self.model.column_selection].max(axis=0)
             columns = self.model.column_selection
         else:
-            row = self.dataframe.max(axis=0)
+            row = self.dataframe.max(axis=0, numeric_only=True)
             columns = self.dataframe.columns
 
         for i, (element, label) in enumerate(zip(row, columns)):
@@ -966,7 +970,6 @@ class PharosTableWidget(QtWidgets.QTableWidget):
             combobox.blockSignals(False)
 
         self.resizeColumnsToContents()
-
 
 class ProgressBoxes(QtWidgets.QWidget):
     """

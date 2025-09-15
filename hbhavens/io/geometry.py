@@ -27,7 +27,6 @@ def import_section_ids(datadir=None):
             
     return sectionids
 
-
 def import_section_geometry(sectionid, datadir=None):
     """
     Load traject ids from appended shapefile

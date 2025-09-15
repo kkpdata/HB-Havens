@@ -219,13 +219,13 @@ class Pharos:
         # Load spectrum table is it exists
         spectrum_table_path = os.path.join(self.mainmodel.project.filedir, "pharos_spectrum_table.pkl")
         if os.path.exists(spectrum_table_path):
-            logger.info("..Loaded PHAROS spectrum table")
+            logger.info("Loaded PHAROS spectrum table")
             self.spectrum_table = pd.read_pickle(spectrum_table_path)
 
         # Load calculation table if it exists
         calculation_results_path = os.path.join(self.mainmodel.project.filedir, "pharos_calculation_results.pkl")
         if os.path.exists(calculation_results_path):
-            logger.info("..Loaded PHAROS calculation table")
+            logger.info("Loaded PHAROS calculation table")
             self.calculation_results.iloc[:, 0] = np.nan
             self.calculation_results.dropna(inplace=True)
 

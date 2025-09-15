@@ -1,4 +1,3 @@
-# Toegevoegd Svasek 03/10/18 - Hele nieuwe Class toegevoegd
 import itertools
 import json
 import logging
@@ -135,7 +134,7 @@ class Hares:
         # Load calculation table if it exists
         calculation_results_path = os.path.join(self.mainmodel.project.filedir, 'hares_calculation_results.pkl')
         if os.path.exists(calculation_results_path):
-            logger.info("..Loaded HARES calculation table")
+            logger.info("Loaded HARES calculation table")
             self.calculation_results = pd.read_pickle(calculation_results_path)
 
     def save_tables(self):

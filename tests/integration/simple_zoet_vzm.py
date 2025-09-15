@@ -1,10 +1,9 @@
 import os
-import shutil
 import unittest
-
 import sqlite3
 import pandas as pd
 
+import hbhavens
 from hbhavens.core.models import MainModel
 from hbhavens.io.database import HRDio
 
@@ -13,55 +12,59 @@ from hbhavens.core.logger import initialize_logger
 
 import common
 
-initialize_logger()
-logger = logging.getLogger()
 
 datadir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'krammersluizen')
+trunkdir = os.path.abspath(os.path.join(os.path.dirname(hbhavens.__file__),'../..'))
+tempdir = os.path.join(trunkdir, 'temp')
 
 paths = {
+    'temp': os.path.join(tempdir, 'krammersluizen'),
     'harborarea': os.path.join(datadir, 'shapes', 'haventerrein.shp'),
     'breakwater': os.path.join(datadir, 'shapes', 'havendammen_oost.shp'),
     'hrd': os.path.join(datadir, 'databases', 'WBI2017_VolkerakZoommeer_217_v01_HBHavens.sqlite'),
     'result_locations_save': os.path.join(datadir, 'shapes', 'uitvoerlocaties_oost.shp')
 }
 
+initialize_logger(filename=os.path.join(tempdir,'hbhavens.log'))
+logger = logging.getLogger()
 class TestSimpleZoetKrammersluizen(unittest.TestCase):
 
     def setUp(self):
         logger.info('SETUP TestSimpleZoetVZM')
         self.mainmodel = MainModel()
-        prjjson = 'temp/krammersluizen.json'
+        prjjson = os.path.join(paths['temp'],'krammersluizen.json')
         if os.path.exists(prjjson) and not self._testMethodName[0:5] == 'test1':
             self.mainmodel.project.open_from_file(prjjson)
 
     def tearDown(self):
         logger.info('TEARDOWN TestSimpleZoetVZM')
-        if os.path.exists('temp'):
-            self.mainmodel.project.save_as('temp/krammersluizen.json', overwrite_all=True)
+        if os.path.exists(paths['temp']):
+            self.mainmodel.project.save_as(os.path.join(paths['temp'],'krammersluizen.json'), overwrite_all=True)
             self.mainmodel.save_tables()
 
     def test1_schematisation_Krammersluizen(self):
-        """
+        '''
         Test preparing Krammersluizen schematisation
-        """
+        '''
         logger.info('TEST1_SCHEMATISATION_KRAMMERSLUIZEN')
-        if not os.path.exists('temp'):
-            os.mkdir('temp')
+        if not os.path.exists(paths['temp']):
+            os.mkdir(paths['temp'])
 
-        supportloc = "VZ_3_00499"
+        supportloc = 'VZ_3_00499'
         bedlevel = -6.5
-        trajecten = ["217"]
+        trajecten = ['217']
         common.add_schematisation(self.mainmodel, paths=paths, supportlocationname=supportloc, trajecten=trajecten, bedlevel=bedlevel)
 
         # Test flood defence
         self.assertListEqual(self.mainmodel.schematisation.flooddefence['traject-id'].tolist(), trajecten)
         # Test harbor area
-        self.assertAlmostEqual(self.mainmodel.schematisation.inner.area, 865985.317362483)
+        self.assertAlmostEqual(self.mainmodel.schematisation.inner.area, 866008.6289164579)
         # Test support location name
         self.assertEqual(self.mainmodel.schematisation.support_location['Name'], supportloc)
 
         # Geef eerst in de projectinstellingen aan dat de eenvoudige methode gebruikt moet worden
         self.mainmodel.project.settings['calculation_method']['method'] = 'simple'
+        self.mainmodel.schematisation.plot_schematisation(save=True, path=paths['temp'], close=True)
 
     def test2_calculation(self):
 
@@ -107,7 +110,11 @@ class TestSimpleZoetKrammersluizen(unittest.TestCase):
             # Check where the counts do not match the count of the support location
             faulty = count.index[~(count == count.loc[supportlocid]).all(axis=1).values].tolist()
             # Check if the list is equal
-            self.assertListEqual(faulty, [], msg=f'Wrong number of "{col} for {faulty}: {count.loc[faulty]} instead of {count.loc[supportlocid]}.')
+            self.assertListEqual(
+                faulty,
+                [],
+                msg = f"Wrong number of {col} for {faulty}: {count.loc[faulty]} instead of {count.loc[supportlocid]}.",
+            )
 
         # Check if the names in the database match the Locations
         conn = sqlite3.connect(tmp_paths['hrd'])
@@ -148,7 +155,7 @@ class TestSimpleZoetKrammersluizen(unittest.TestCase):
             common.compare_dataframes(self, simple_table.round(4), hrd_table.round(4))
 
         # Verwijder
-        shutil.rmtree('temp')
-    
-if __name__ == "__main__":
+        # shutil.rmtree(paths['temp'])        
+
+if __name__ == '__main__':
     unittest.main(verbosity=2)

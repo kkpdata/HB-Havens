@@ -331,7 +331,6 @@ class CalculationResults(ExtendedDataFrame):
         # Energy difference between transmission and wind growth
         d = np.maximum(factor_E_TR - factor_E_W, 0)
 
-        # Aangepast Svasek 04/10/18 - Toevoegen van de include_hares optie
         # When PHAROS or HARES is used, subtract the influence of wave intrusion
         if (
             self.settings["calculation_method"]["include_pharos"]
@@ -560,13 +559,13 @@ class Swan:
         # Load iteration results
         iteration_results_path = os.path.join(self.mainmodel.project.filedir, "swan_iteration_results.pkl")
         if os.path.exists(iteration_results_path):
-            logger.info("..Loaded SWAN iteration table")
+            logger.info("Loaded SWAN iteration table")
             self.iteration_results.load_from_pickle(iteration_results_path)
 
         # Load calculation results
         calculation_results_path = os.path.join(self.mainmodel.project.filedir, "swan_calculation_results.pkl")
         if os.path.exists(calculation_results_path):
-            logger.info("..Loaded SWAN calculation table")
+            logger.info("Loaded SWAN calculation table")
             self.calculation_results.load_from_pickle(calculation_results_path)
 
     def save_tables(self):

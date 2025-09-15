@@ -2,6 +2,7 @@ import os
 import shutil
 import unittest
 
+import hbhavens
 from hbhavens.core.models import MainModel
 
 import logging
@@ -9,49 +10,53 @@ from hbhavens.core.logger import initialize_logger
 
 import common
 
-initialize_logger()
-logger = logging.getLogger()
 
 datadir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'heliushaven')
+trunkdir = os.path.abspath(os.path.join(os.path.dirname(hbhavens.__file__),'../..'))
+tempdir = os.path.join(trunkdir, 'temp')
 
 paths = {
+    'temp': os.path.join(tempdir, 'heliushaven'),
     'harborarea': os.path.join(datadir, 'shapes', 'haventerrein.shp'),
     'breakwater': os.path.join(datadir, 'shapes', 'havendammen.shp'),
     'result_locations_save': os.path.join(datadir, 'shapes', 'uitvoerlocaties.shp'),
     'hrd': os.path.join(datadir, 'databases', 'steunpunt_heliushaven.sqlite')
 }
 
+initialize_logger(filename=os.path.join(tempdir,'hbhavens.log'))
+logger = logging.getLogger()
+
 class TestAdvancedZoetSwan(unittest.TestCase):
 
     def setUp(self):
         logger.info('SETUP TestAdvancedZoetSwan')
         self.mainmodel = MainModel()
-        prjjson = 'temp/heliushaven.json'
+        prjjson = os.path.join(paths['temp'],'heliushaven.json')
         if os.path.exists(prjjson) and not self._testMethodName[0:5] == 'test1':
             self.mainmodel.project.open_from_file(prjjson)
 
     def tearDown(self):
         logger.info('TEARDOWN TestAdvancedZoetSwan')
-        if os.path.exists('temp'):
-            self.mainmodel.project.save_as('temp/heliushaven.json', overwrite_all=True)
+        if os.path.exists(paths['temp']):
+            self.mainmodel.project.save_as(os.path.join(paths['temp'],'heliushaven.json'), overwrite_all=True)
             self.mainmodel.save_tables()
 
     def test1_calculation_swan(self):
-        """
+        '''
         Test preparing Heliushaven schematisation
-        """
+        '''
         logger.info('TEST1_SCHEMATISATION_HELIUSHAVEN')
         # If the directory already exists, remove it.
-        if os.path.exists('temp'):
-            shutil.rmtree('temp')
-        os.mkdir('temp')
+        if os.path.exists(paths['temp']):
+            shutil.rmtree(paths['temp'])
+        os.mkdir(paths['temp'])
 
-        supportloc = "HV_1_20-4_dk_00087"
+        supportloc = 'HV_1_20-4_dk_00087'
         bedlevel = -10.0
         trajecten = ['20-4']
 
         common.add_schematisation(self.mainmodel, paths=paths, supportlocationname=supportloc, trajecten=trajecten, bedlevel=bedlevel)
-        # Test flood defence
+        self.mainmodel.schematisation.plot_schematisation(save=True, path=paths['temp'], close=True)
 
         # Stel in voor geavanceerde methode
         self.mainmodel.project.settings['calculation_method']['method'] = 'advanced'
@@ -94,39 +99,39 @@ class TestAdvancedZoetSwan(unittest.TestCase):
         common.export_to_database(self.mainmodel, tmp_paths, export_hlcd_config=False)
 
         # Verwijder
-        shutil.rmtree('temp')
+        # shutil.rmtree(paths['temp'])
 
 class TestAdvancedZoetSwanPharos(unittest.TestCase):
 
     def setUp(self):
         logger.info('SETUP TestAdvancedZoetSwanPharos')
         self.mainmodel = MainModel()
-        prjjson = 'temp/Heliushaven.json'
+        prjjson = os.path.join(paths['temp'],'Heliushaven.json')
         if os.path.exists(prjjson):
             self.mainmodel.project.open_from_file(prjjson)
 
     def tearDown(self):
         logger.info('TEARDOWN TestAdvancedZoetSwanPharos')
-        if os.path.exists('temp'):
-            self.mainmodel.project.save_as('temp/Heliushaven.json', overwrite_all=True)
+        if os.path.exists(paths['temp']):
+            self.mainmodel.project.save_as(os.path.join(paths['temp'],'Heliushaven.json'), overwrite_all=True)
             self.mainmodel.save_tables()
 
     def test2_calculation_swan_pharos(self):
-        """
+        '''
         Test preparing Heliushaven schematisation
-        """
+        '''
         logger.info('TEST1_SCHEMATISATION_HELIUSHAVEN')
         # If the directory already exists, remove it.
-        if os.path.exists('temp'):
-            shutil.rmtree('temp')
-        os.mkdir('temp')
+        if os.path.exists(paths['temp']):
+            shutil.rmtree(paths['temp'])
+        os.mkdir(paths['temp'])
 
-        supportloc = "HV_1_20-4_dk_00087"
+        supportloc = 'HV_1_20-4_dk_00087'
         bedlevel = -10.0
         trajecten = ['20-4']
 
         common.add_schematisation(self.mainmodel, paths=paths, supportlocationname=supportloc, trajecten=trajecten, bedlevel=bedlevel)
-        # Test flood defence
+        self.mainmodel.schematisation.plot_schematisation(save=True, path=paths['temp'], close=True)
 
         # Stel in voor geavanceerde methode
         self.mainmodel.project.settings['calculation_method']['method'] = 'advanced'
@@ -171,36 +176,36 @@ class TestAdvancedZoetSwanPharos(unittest.TestCase):
         common.export_to_database(self.mainmodel, tmp_paths, export_hlcd_config=False)
 
         # Verwijder
-        shutil.rmtree('temp')
+        # shutil.rmtree(paths['temp'])
 
 class TestAdvancedZoetSwanHares(unittest.TestCase):
 
     def setUp(self):
         logger.info('SETUP TestAdvancedZoetSwanHares')
         self.mainmodel = MainModel()
-        prjjson = 'temp/Heliushaven.json'
+        prjjson = os.path.join(paths['temp'],'Heliushaven.json')
         if os.path.exists(prjjson):
             self.mainmodel.project.open_from_file(prjjson)
 
     def tearDown(self):
         logger.info('TEARDOWN TestAdvancedZoetSwanHares')
-        if os.path.exists('temp'):
-            self.mainmodel.project.save_as('temp/Heliushaven.json', overwrite_all=True)
+        if os.path.exists(paths['temp']):
+            self.mainmodel.project.save_as(os.path.join(paths['temp'],'Heliushaven.json'), overwrite_all=True)
             self.mainmodel.save_tables()
 
     def test3_calculation_swan_hares(self):
         logger.info('TEST1_SCHEMATISATION_HELIUSHAVEN')
         # If the directory already exists, remove it.
-        if os.path.exists('temp'):
-            shutil.rmtree('temp')
-        os.mkdir('temp')
+        if os.path.exists(paths['temp']):
+            shutil.rmtree(paths['temp'])
+        os.mkdir(paths['temp'])
 
-        supportloc = "HV_1_20-4_dk_00087"
+        supportloc = 'HV_1_20-4_dk_00087'
         bedlevel = -10.0
         trajecten = ['20-4']
 
         common.add_schematisation(self.mainmodel, paths=paths, supportlocationname=supportloc, trajecten=trajecten, bedlevel=bedlevel)
-        # Test flood defence
+        self.mainmodel.schematisation.plot_schematisation(save=True, path=paths['temp'], close=True)
 
         # Stel in voor geavanceerde methode
         self.mainmodel.project.settings['calculation_method']['method'] = 'advanced'
@@ -245,7 +250,7 @@ class TestAdvancedZoetSwanHares(unittest.TestCase):
         common.export_to_database(self.mainmodel, tmp_paths, export_hlcd_config=False)
 
         # Verwijder
-        shutil.rmtree('temp')
+        # shutil.rmtree(paths['temp'])        
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     unittest.main(verbosity=2)

@@ -13,15 +13,15 @@ import numpy as np
 import pandas as pd
 import geopandas as gpd
 from shapely.geometry import LineString, MultiLineString
+from shapely import distance, Point
 
 from hbhavens import core
-from hbhavens.core.geometry import is_left, as_linestring_list
+from hbhavens.core.geometry import is_left, as_linestring_list, extend_point_to_linestring, find_nearest_intersection
 from hbhavens.core.datamodels import ExtendedDataFrame
 
 # Global constants:
 global g
 g = 9.81
-
 
 class SimpleCalculation:
 
@@ -45,7 +45,6 @@ class SimpleCalculation:
         self.wavebreaking = WaveBreaking(self)
         self.combinedresults = CombineResults(self)
 
-
     def initialize(self):
         """
         Initialize the simple calculation. Can be done only after
@@ -56,7 +55,6 @@ class SimpleCalculation:
         self.transmission.initialize()
         self.wavegrowth.initialize()
         self.wavebreaking.initialize()
-
 
     def run_all(self, processes=None, progress_function=None):
         """
@@ -71,40 +69,39 @@ class SimpleCalculation:
             processes = ['Diffractie', 'Transmissie', 'Lokale golfgroei', 'Golfbreking']
 
         if progress_function:
-            progress_function(1, 'Initialiseren...')
+            progress_function(1, 'Initialiseren')
         self.initialize()
 
 
         if 'Diffractie' in processes:
             if progress_function:
-                progress_function(1, 'Berekenen van diffractie...')
+                progress_function(1, 'Berekenen van diffractie')
             self.diffraction.run()
 
         if 'Transmissie' in processes:
             if progress_function:
-                progress_function(1, 'Berekenen van transmissie...')
+                progress_function(1, 'Berekenen van transmissie')
             self.transmission.run()
 
         if 'Lokale golfgroei' in processes:
             if progress_function:
-                progress_function(1, 'Berekenen van lokale golfgroei...')
+                progress_function(1, 'Berekenen van lokale golfgroei')
             self.wavegrowth.run(progress_function=progress_function)
 
         if 'Golfbreking' in processes:
             if progress_function:
-                progress_function(1, 'Berekenen van golfbreking...')
+                progress_function(1, 'Berekenen van golfbreking')
             self.wavebreaking.run()
 
         # Combine
         if progress_function:
-            progress_function(1, 'Combineren van resultaten...')
+            progress_function(1, 'Combineren van resultaten')
         self.combinedresults.run(processes)
 
         self.mainmodel.project.settings['simple']['finished'] = True
 
         if progress_function:
             progress_function(1, 'Berekening voltooid.')
-
 
     def save_results(self):
         """
@@ -153,6 +150,53 @@ class SimpleCalculation:
 
         self.combinedresults.output.load_pickle(os.path.join(directory, 'simple_combinedresults.pkl'))
 
+    def calc_repr_wave_length(self, d, T):
+        """
+        Function to calculate the representative wave length Lp.
+
+        Method based on 4th order Padé approximation:
+        y = (4*pi^2)/g * d/T^2
+        x = y(y+ 1./(1 + 0.667y + 0.445y^2 - 0.105y^3 + 0.272y^4))
+        L = 2*pi*d/sqrt(x)
+
+        Parameters
+        ----------
+        d : float
+            depth
+        T : float
+            wave period
+
+        Returns
+        -------
+        Lr : float
+            representative wave length
+
+        References
+        ----------
+        RWS, 2014. Golfbelastingen in havens en afgeschermde gebieden - een methode voor het
+            bepalen van golfbelastingen voor het toetsen van waterkeringen. Rapport versie 3.
+            RWS.2014.001. Rijkswaterstaat Water, Verkeer en Leefomgeving. 31 augustus 2014.
+        """
+
+        # Convert datatype if necessary
+        if isinstance(T, (int, np.integer, float, np.floating)):
+            T = np.array([T])
+
+        # Create empty array for Lr
+        Lr = np.zeros_like(T)
+        Lr[np.where(T == 0)] = np.nan
+
+        # Remove zero values of T (so no division by zero)
+        d = d[np.where(T != 0)]
+        T = T[np.where(T != 0)]
+
+        # If there are values left, calculate Lr
+        if np.size(T):
+            y = (4 * np.pi**2) / g * d / T**2
+            x = y * (y + 1. / (1 + 0.667 * y + 0.445 * y**2 - 0.105 * y**3 + 0.272 * y**4))
+            Lr[np.where(Lr == 0)] = 2 * np.pi * d / (x)**0.5
+
+        return Lr.squeeze()
 
 
 class Diffraction:
@@ -184,9 +228,8 @@ class Diffraction:
 
         # Create output dataframe
         self.output = ExtendedDataFrame(
-            columns=['Wave direction', 'Lr', 'Beq', 'Smax', 'table_type', 'breakwater', 'shading', 'X', 'Y', 'Kd', 'Diffraction direction'],
+            columns=['Wave direction', 'Lr', 'Beq', 'Smax', 'table_type', 'X', 'Y', 'Kd', 'DirLeftHead', 'DirRightHead', 'DirNearestHead','Diffraction direction','Diffraction point'],
             dtype=float)
-
 
     def initialize(self):
         """
@@ -196,6 +239,7 @@ class Diffraction:
         # Geometries
         self.wlevcol = self.mainmodel.hydraulic_loads.wlevcol
         self.breakwaters = self.schematisation.breakwaters
+        self.entrance = self.schematisation.entrance
         self.bedlevel = self.schematisation.bedlevel
         self.inner = self.schematisation.inner
         self.buffered_inner = self.schematisation.buffered_inner
@@ -230,98 +274,17 @@ class Diffraction:
         )
         # self.output.
         self.output.sort_index(inplace=True)
-    
-
-    def diffraction_angle(self, bwi, location):
-        """
-        Calculate diffraction angle
-        
-        Parameters
-        ----------
-        bwi : break water index
-            List or array of indeces of the breakwater to use in the calculation
-        locationcrd : tuple
-            Coordinate of the location to use for calculating the diffraction direction.
-        """
-
-        breakwaterindex = np.atleast_1d(bwi)
-
-        angles = np.zeros(len(breakwaterindex))
-
-        for idx in np.unique(breakwaterindex):
-            
-            # Determine the coordinate from which the wave comes
-            if idx < 2:
-                bwcrd = self.breakwaters.at[idx, 'breakwaterhead'].coords[0]
-            else:
-                heads = [p.coords[0] for p in self.breakwaters['breakwaterhead']]
-                bwcrd = ((heads[0][0] + heads[1][0]) / 2, (heads[0][1] + heads[1][1]) / 2)
-
-            crds = np.vstack([bwcrd, location.geometry.coords[0]])
-            angle = core.geometry.car2nau(np.angle(complex(*np.diff(crds, axis=0).squeeze()), deg=True) % 360)
-            
-            # Assign to array
-            angles[breakwaterindex == idx] = angle
-        
-        if isinstance(bwi, (np.floating, np.integer, int, float)):
-            angles = angles.squeeze()
-
-        return angles
-
-
-    def _determine_shading_breakwater(self, wavedirections, locationcrd):
-        """
-        Determine which of the breakwaters is shading a location, given a wavedirection
-        core.geometry.
-
-        Parameters
-        ----------
-        wavedirection : float
-            wave direction
-        locationcrd : tuple
-            coordinate of the location
-
-        Returns
-        -------
-        breakwaterindex : int
-            Index of the shading breakwater
-        """
-
-        heads = [row.breakwaterhead.coords[0] for row in self.breakwaters.itertuples()]
-        index = []
-
-        for wavedir in wavedirections:
-            # Draw a line from the first breakwater in the wave direction
-            firstline = core.geometry.extend_point_to_linestring(heads[0], (wavedir + 180) % 360, (100000., -100000.))
-            # If the head of the second breakwater is on the left, the first breakwater is the right one
-            rightindex = 0 if is_left(heads[1], firstline) else 1
-            # Assign opposite index to rightindex
-            leftindex = 1 if rightindex == 0 else 0
-
-            # If the location is on the left of left breakwater
-            leftline = core.geometry.extend_point_to_linestring(heads[leftindex], (wavedir + 180) % 360, (100000., -100000.))
-            rightline = core.geometry.extend_point_to_linestring(heads[rightindex], (wavedir + 180) % 360, (100000., -100000.))
-            if is_left(locationcrd, leftline):
-                index.append(leftindex)
-
-            # If the location is on the right of the right breakwater
-            elif ~is_left(locationcrd, rightline):
-                index.append(rightindex)
-
-            else:
-                index.append(2)
-
-        return np.array(index)
-            
 
     def run(self):
         """
         Run with the following steps:
-        1. Calculate representative wave length for each combination
-        2. Calculate equivalent opening width per situation, and check if
-           the harbor entrance is reachable by the wave (the wave should not cross
-           the inner area of the harbor)
-        3. Calculate the diffraction coefficients
+        1.	Vaststellen combinatie hydraulische belastingen in het steunpunt  (significante golfhoogte, piekperiode, spectrale golfperiode, golfrichting en de waterstand);
+        2.	Vaststellen van de representatieve golflengte LR in de havenmonding;
+        3.	Vaststellen equivalente openingsbreedte van de havenmond afhankelijk van de beschouwde golfrichting;
+        4.	Vaststellen van diffractietabellen;
+        5.	Vaststellen assenstelsel uitvoerlocatie;
+        6.	Berekening diffractiecoëfficiënt Kd;
+        7.	Berekening van de diffractierichting.
         """
 
         # Change dataframe index
@@ -329,18 +292,18 @@ class Diffraction:
         self.output.sort_values(by=['Location', 'Wave direction', 'HydraulicLoadId'], inplace=True)
         self.output.set_index(['Location', 'Wave direction'], inplace=True)
 
-        # Calculate represenatative wave length
+        # Step 2: Calculate represenatative wave length
         #--------------------------------------------------------------------
         # Wave parameters are function input, represenative wave length is calculated:
         # print(self.output.columns.tolist())
         # Get water levels and Tm-1,0 from hydraulic loads
         wlev, tmm10 = self.hydraulic_loads.reset_index().sort_values(by=['Wave direction', 'HydraulicLoadId'])[[self.wlevcol, 'Tm-1,0']].values.T
         
-        Lr = calc_repr_wave_length(d=wlev-self.bedlevel, T=tmm10)
+        Lr = self.mainmodel.simple_calculation.calc_repr_wave_length(d=wlev-self.bedlevel, T=tmm10)
 
         self.output['Lr'] = np.tile(Lr, len(self.result_locations))
 
-        # Calculate equivalent opening width harbor entrance
+        # Step 3: Calculate equivalent opening width harbor entrance
         #--------------------------------------------------------------------
         # If only one breakwater, no equivalent opening width
         
@@ -391,8 +354,9 @@ class Diffraction:
             self.output.loc[index, 'Kd'] = 0.0
             self.output.loc[index, 'table_type'] = 0
 
-        # Step 5C: Choice of diffraction table
+        # Step 4: Load diffraction tables
         #--------------------------------------------------------------------
+        self._load_diffraction_tables()
         # For Dutch breakwater, set Smax is 10, or a large directional spread
         self.output['Smax'] = 10
 
@@ -404,11 +368,8 @@ class Diffraction:
             condition = ((self.output['Beq'] < 5 * self.output['Lr']) & (self.output['Beq'] > 0.001))
             self.output.loc[condition, 'table_type'] = 2
        
-        # Step 5D: Location where diffractiecoefficient is determined
+        # Step 5: Location where diffractiecoefficient is determined
         #--------------------------------------------------------------------
-        # Load diffraction tables
-        self._load_diffraction_tables()
-        
         # Three categories: table_type 2, origin in middle, table type 1, origin
         # on breakwater 1, table_type 1, origin on second breakwater (if 2 bws)
         # for locnaam, group in self.output.groupby(level=0, observed=False):
@@ -503,19 +464,11 @@ class Diffraction:
                     )
             
             # Add group values to dataframe
-            shading = shading_index == breakwater_index
-            self.output.loc[locnaam, ['breakwater', 'X', 'Y', 'shading']] = np.c_[[np.ones(len(x)) * breakwater_index, x, y, shading]].T
+            # shading = shading_index == breakwater_index
+            # self.output.loc[locnaam, ['breakwater', 'X', 'Y', 'shading']] = np.c_[[np.ones(len(x)) * breakwater_index, x, y, shading]].T
+            self.output.loc[locnaam, ['X', 'Y']] = np.c_[[x, y]].T
 
-        # Calculate diffraction direction
-        # Determine which breakwater is the nearest (for calculating the diffraction angle)
-        names = self.output.index.get_level_values(0).values
-        breakwater_index = self.output['breakwater'].values
-        
-        for location in self.result_locations.itertuples():
-            index = (names == location.Naam) & ~pd.isnull(breakwater_index)
-            self.output.loc[index, 'Diffraction direction'] = self.diffraction_angle(breakwater_index[index].astype(int), location)            
-        
-        # Step 5E: Calculation of diffractioncoëfficient
+        # Step 6: Calculation of diffractioncoëfficient
         #--------------------------------------------------------------------
         # First determine where Lr == nan, no wave period, no waves
         # Also the combinations that already are assigned 0 should be skipped
@@ -527,11 +480,14 @@ class Diffraction:
         if any(self.output['Kd'] < 0.0) or any(self.output['Kd'] > 1.1):
             raise ValueError('Some values for Kd are outside the valid range (0 - 1.1)')
 
-        # Change dataframe index
+        # Step 7: Calculation of diffraction direction
+        #--------------------------------------------------------------------
+        self.diffraction_direction()
+
+       # Change dataframe index
         self.output.reset_index(inplace=True)
         self.output.set_index(['Location', 'HydraulicLoadId'], inplace=True)
-        
-        
+
     def _load_diffraction_tables(self):
         """
         Load diffraction tables
@@ -549,7 +505,6 @@ class Diffraction:
             tablename = os.path.splitext(table)[0]
             # Add to output dictionary
             self.diffraction_tables[tablename] = core.models.InterpolationTable(os.path.join(tabledir, table))            
-
 
     def calc_eq_opening_width(self, wavedir):
         """
@@ -596,10 +551,8 @@ class Diffraction:
         
         return distance
 
-
     def interp_diffraction_row(self, row):
         return self.interp_diffraction(row.X, row.Y, row.Lr, row.Beq, int(row.table_type), int(row.Smax))
-
 
     def interp_diffraction(self, X, Y, Lr, Beq, table_type, Smax):
         """
@@ -675,56 +628,341 @@ class Diffraction:
 
         return Kd
 
+    def diffraction_direction(self):
 
-def calc_repr_wave_length(d, T):
-    """
-    Function to calculate the representative wave length Lp.
+        self.output[['DirLeftHead','DirRightHead','DirNearestHead','Diffraction direction','Diffraction point','Diffraction case']] = None
 
-    Method based on 4th order Padé approximation:
-    y = (4*pi^2)/g * d/T^2
-    x = y(y+ 1./(1 + 0.667y + 0.445y^2 - 0.105y^3 + 0.272y^4))
-    L = 2*pi*d/sqrt(x)
+        heads = self.map_breakwaterheads()
+        breakwaters = self.breakwaters.copy()
 
-    Parameters
-    ----------
-    d : float
-        depth
-    T : float
-        wave period
+        # set entrance_coordinate as opposite breakwaterhead if one of the heads is None (only one breakwater)
+        if None in heads.values():
+            heads.update((k,1) for k,v in heads.items() if v == None)
 
-    Returns
-    -------
-    Lr : float
-        representative wave length
+            breakwaters.loc[1] = ''
+            breakwaters['breakwaterhead'].loc[1] = Point(self.schematisation.entrance_coordinate)
 
-    References
-    ----------
-    RWS, 2014. Golfbelastingen in havens en afgeschermde gebieden - een methode voor het
-        bepalen van golfbelastingen voor het toetsen van waterkeringen. Rapport versie 3.
-        RWS.2014.001. Rijkswaterstaat Water, Verkeer en Leefomgeving. 31 augustus 2014.
-    """
+        ind = self.output.reset_index()['Location']
+        result_locations_indexed = self.result_locations.set_index('Naam')
 
-    # Convert datatype if necessary
-    if isinstance(T, (int, np.integer, float, np.floating)):
-        T = np.array([T])
+        if heads['left'] != None:
+            self.output['DirLeftHead'] = [self.get_direction(breakwaters['breakwaterhead'].iloc[heads['left']], x) for x in result_locations_indexed.loc[ind,'geometry']] 
+        
+        if heads['right'] != None:
+            self.output['DirRightHead'] = [self.get_direction(breakwaters['breakwaterhead'].iloc[heads['right']], x) for x in result_locations_indexed.loc[ind,'geometry']] 
+        
+        if heads['left'] != None and heads['right'] != None:
+            self.output['DirNearestHead'] = [
+                self.output['DirRightHead'].iloc[ix] 
+                if distance(breakwaters['breakwaterhead'].iloc[heads['left']], x) > distance(breakwaters['breakwaterhead'].iloc[heads['right']], x) 
+                else self.output['DirLeftHead'].iloc[ix] 
+                for ix,x in enumerate(result_locations_indexed.loc[ind,'geometry'])
+                ]
 
-    # Create empty array for Lr
-    Lr = np.zeros_like(T)
-    Lr[np.where(T == 0)] = np.nan
+        # Vectorized diffraction direction calculation - avoid iterrows()
+        wave_directions = self.output.index.get_level_values(1) if hasattr(self.output.index, 'get_level_values') else self.output.reset_index()['Wave direction']
+        
+        # Convert NaN to None for the diffracted_direction method
+        dir_left = [None if pd.isna(x) else wd + ((x - wd + 180) % 360 - 180) for x, wd in zip(self.output['DirLeftHead'], wave_directions)]
+        dir_right = [None if pd.isna(x) else wd + ((x - wd + 180) % 360 - 180) for x, wd in zip(self.output['DirRightHead'], wave_directions)]
+        dir_nearest = [None if pd.isna(x) else wd + ((x - wd + 180) % 360 - 180) for x, wd in zip(self.output['DirNearestHead'], wave_directions)]
+        
+        diffraction_results = [
+            self.diffracted_direction(wd, dlh, drh, dnh) 
+            for wd, dlh, drh, dnh in zip(wave_directions, dir_left, dir_right, dir_nearest)
+        ]
+        self.output['Diffraction direction'] = [result[0] for result in diffraction_results]
+        self.output['Diffraction case'] = [result[1] for result in diffraction_results]
+        self.diffraction_point(breakwaters, heads)
+               
+    def _determine_shading_breakwater(self, wavedirections, locationcrd):
+        """
+        Determine which of the breakwaters is shading a location, given a wavedirection
+        core.geometry.
 
-    # Remove zero values of T (so no division by zero)
-    d = d[np.where(T != 0)]
-    T = T[np.where(T != 0)]
+        Parameters
+        ----------
+        wavedirection : float
+            wave direction
+        locationcrd : tuple
+            coordinate of the location
 
-    # If there are values left, calculate Lr
-    if np.size(T):
-        y = (4 * np.pi**2) / g * d / T**2
-        x = y * (y + 1. / (1 + 0.667 * y + 0.445 * y**2 - 0.105 * y**3 + 0.272 * y**4))
-        Lr[np.where(Lr == 0)] = 2 * np.pi * d / (x)**0.5
+        Returns
+        -------
+        breakwaterindex : int
+            Index of the shading breakwater
+        """
 
-    return Lr.squeeze()
+        heads = [row.breakwaterhead.coords[0] for row in self.breakwaters.itertuples()]
+        index = []
 
+        for wavedir in wavedirections:
+            # Draw a line from the first breakwater in the wave direction
+            firstline = core.geometry.extend_point_to_linestring(heads[0], (wavedir + 180) % 360, (100000., -100000.))
+            # If the head of the second breakwater is on the left, the first breakwater is the right one
+            rightindex = 0 if is_left(heads[1], firstline) else 1
+            # Assign opposite index to rightindex
+            leftindex = 1 if rightindex == 0 else 0
 
+            # If the location is on the left of left breakwater
+            leftline = core.geometry.extend_point_to_linestring(heads[leftindex], (wavedir + 180) % 360, (100000., -100000.))
+            rightline = core.geometry.extend_point_to_linestring(heads[rightindex], (wavedir + 180) % 360, (100000., -100000.))
+            if is_left(locationcrd, leftline):
+                index.append(leftindex)
+
+            # If the location is on the right of the right breakwater
+            elif ~is_left(locationcrd, rightline):
+                index.append(rightindex)
+
+            else:
+                index.append(2)
+
+        return np.array(index)
+
+    def map_breakwaterheads(self):
+        '''   
+        This functions determines for each breakwaterhead whether it is a "left" or "right" breakwater. 
+        The definition of left and right follows the cartesian convention for directions. In other words, when following the outer 
+        boundary in a counter-clockwise (ccw) manner, the right breakwaterhead is encountered first and the left breakwaterhead last.
+
+        The method is to:
+        1) determine if the entrance is ccw by checking if the (inner) harbour basin is to the left of the entrance when moving from the 
+        first to the second point
+
+        2) find the distances between the first breakwaterhead and both sides of the entrance
+
+        3) determine if the first breakwaterhead is left 
+        - If the distance of the head to the first entrance side is smallest, the breakwater is left if not entranceisccw
+        - If the distance of the head to the last entrance side is smallest, the breakwater is left if entranceisccw
+
+        4) map the breakwaterheads to either left or right
+
+        '''
+
+        # Step 1: determine if the entrance is ccw
+        if is_left(self.inner.representative_point().coords[0], [xy for xy in self.entrance.coords]):
+            entranceisccw = True
+        else:
+            entranceisccw = False
+        
+        # Step 2: find the distances between the first breakwaterhead and both sides of the entrance
+        distHead0Entrance = [distance(self.breakwaters['breakwaterhead'].iloc[0], Point(self.entrance.coords[i])) for i in [0, -1]]
+
+        # Step 3: determine if the first breakwaterhead is left
+        if distHead0Entrance[-1] > distHead0Entrance[0]:
+            Head0isleft = not entranceisccw
+        else:
+            Head0isleft = entranceisccw
+
+        # Step 4: map the breakwaterheads to either left, right or None (if 1 breakwater)
+        heads = {
+            'left': None,
+            'right': None, 
+        }
+
+        if Head0isleft:
+            heads['left'] = 0
+            if len(self.breakwaters) == 2:
+                heads['right'] = 1
+        else:
+            heads['right'] = 0
+            if len(self.breakwaters) == 2:
+                heads['left'] = 1
+
+        return heads
+    
+    def get_direction(self, pointA, pointX):
+        """
+        Calculates direction from point A to point X.
+        Points are shapely Point objects or coordinate tuples
+        Returns direction in Nautical convention (degrees, coming-from, positive in clockwise direction, starting North)
+        """
+        # to be added to geometry class
+        if isinstance(pointA, Point):
+            pointA = pointA.coords[0]
+        if isinstance(pointX, Point):
+            pointX = pointX.coords[0]
+
+        dx = pointX[0] - pointA[0]
+        dy = pointX[1] - pointA[1]
+
+        angle_rad = np.arctan2(dy, dx)
+        angle_deg = np.degrees(angle_rad)  
+        angle_degN = (270.0 - angle_deg) % 360
+
+        return angle_degN
+
+    def diffracted_direction(self, DirIn, DirLeft, DirRight, DirNearestHead=None):
+        """
+        Calculation of the diffracted direction (Rou) given incoming direction (Rin)
+        and breakwater directions (DirLeftHead, DirRightHead).
+        Handles cases with two breakwaters, only left breakwater, or only right breakwater.
+        All directions are Nautical convention (degrees, coming-from, positive in clockwise direction, starting North)
+
+        Parameters:
+        - DirIn: incoming direction (degrees)
+        - DirLeft: left breakwater direction (degrees or None)
+        - DirRight: right breakwater direction (degrees or None)
+        Returns:
+            DirDiffracted (diffracted direction, degrees) 
+            case (str)
+        """
+
+        # Only left breakwater present
+        if DirLeft is not None and DirRight is None:
+            if self.is_direction_between(DirIn, DirLeft, DirLeft + 180.0):
+                DirDiffracted = DirIn
+                case = 'Open'
+            elif self.is_direction_between(DirIn, DirLeft + 180.0, DirLeft):
+                DirDiffracted = DirLeft
+                case = 'Diffracted around DirLeft'
+            else:
+                raise ValueError("DirLeft is present but DirIn does not match expected conditions.")
+            
+        # Only right breakwater present
+        elif DirRight is not None and DirLeft is None:
+            if self.is_direction_between(DirIn, DirRight, DirRight + 180.):
+                DirDiffracted = DirRight
+                case = 'Diffracted around DirRight'
+            elif self.is_direction_between(DirIn, DirRight + 180.0, DirRight):
+                DirDiffracted = DirIn
+                case = 'Open'
+            else:
+                raise ValueError("RDirRightRight is present but DirIn does not match expected conditions.")
+            
+        # Both breakwaters present
+        elif DirLeft is not None and DirRight is not None:
+
+            # Overlapping breakwaters
+            # Nearest breakwater determines the diffracted direction
+            if DirLeft > DirRight:
+                if DirNearestHead != None:
+                    DirDiffracted = DirNearestHead
+                    case = 'Overlapping breakwaters'
+                else:
+                    raise ValueError("Overlapping breakwaters, but no DirNearestHead provided")
+
+            # Non-overlapping breakwaters
+            else:
+                if self.is_direction_between(DirIn, DirLeft, DirRight):
+                    DirDiffracted = DirIn
+                    case = 'Open'
+                elif self.is_direction_between(DirIn, DirRight, DirLeft + 180.0):
+                    DirDiffracted = DirRight
+                    case = 'Diffracted around DirRight'
+                elif self.is_direction_between(DirIn, DirRight + 180.0, DirLeft):
+                    DirDiffracted = DirLeft
+                    case = 'Diffracted around DirLeft'
+                elif self.is_direction_between(DirIn, DirLeft + 180.0, DirRight + 180.0):
+                    DirDiffracted = DirRight - (DirIn - (DirLeft + 180.0))
+                    case = 'Shadow zone'
+                else:
+                    raise ValueError("RLeft and RRight is present but Rin does not match expected conditions.")
+        else:
+            raise ValueError("At least one breakwater direction (DirLeftHead or DirRightHead) must be provided.")
+
+        return DirDiffracted % 360, case
+
+    def is_direction_between(self, R, RA, RB):
+        """
+        Checks if direction R lies between RA and RB (clockwise).
+        All angles are in degrees [0, 360).
+        """
+        
+        # to be added to geometry class
+        R = R % 360
+        RA = RA % 360
+        RB = RB % 360
+
+        if RA <= RB:
+            return RA <= R < RB
+        else:
+            # Wrap-around case
+            return R >= RA or R < RB
+
+    def diffraction_point(self, breakwaters, heads):
+        """
+        Determine the diffraction point, given the breakwaters and their heads.
+        If only one breakwater, the diffraction point is the breakwater head.
+        If two breakwaters, the diffraction point is the intersection of the two breakwaters,
+        unless the intersection is outside the breakwaters, in which case the nearest head is used.
+
+        Parameters
+        ----------
+        breakwaters : geopandas with breakwaters. 
+        heads : dictionary with keys 'left' and 'right'
+        self.output : pandas dataframe with columns 'Diffraction case'
+
+        Returns
+        -------
+        self.output : pandas dataframe with columns 'Diffraction point'
+        """
+
+        self.output['Diffraction point'] = None
+        self.output.loc[self.output['Diffraction case'] == 'Diffracted around DirLeft', 'Diffraction point'] = breakwaters['breakwaterhead'].iloc[heads['left']]
+        self.output.loc[self.output['Diffraction case'] == 'Diffracted around DirRight', 'Diffraction point'] = breakwaters['breakwaterhead'].iloc[heads['right']]
+        # overlapping breakwater, in shadow zone
+        self.output.loc[self.output['Diffraction case'] == 'Shadow zone', 'Diffraction point'] = None
+        # overlapping breakwater, not in shadow zone - use nearest breakwater head
+        overlapping_indices = self.output['Diffraction case'] == 'Overlapping breakwaters'
+        if overlapping_indices.any():
+            # Cache breakwater heads and result locations to avoid repeated lookups
+            left_head = breakwaters['breakwaterhead'].iloc[heads['left']]
+            right_head = breakwaters['breakwaterhead'].iloc[heads['right']]
+            result_locations_indexed = self.result_locations.set_index('Naam')
+            
+            # For overlapping breakwaters, determine the nearest head for each case
+            diffraction_points = []
+            for idx, row in self.output[overlapping_indices].iterrows():
+                # Get the result location geometry
+                location_name = idx[0] if isinstance(idx, tuple) else idx
+                location_geom = result_locations_indexed.loc[location_name, 'geometry']
+                
+                # Calculate distances to both heads using cached geometries
+                dist_to_left = left_head.distance(location_geom)
+                dist_to_right = right_head.distance(location_geom)
+                
+                # Use the nearest head as diffraction point
+                nearest_head = left_head if dist_to_left <= dist_to_right else right_head
+                diffraction_points.append(nearest_head)
+            
+            # Assign the diffraction points
+            self.output.loc[overlapping_indices, 'Diffraction point'] = diffraction_points
+
+        # open case, find intersection with line between breakwaterheads
+        if heads['left'] is not None and heads['right'] is not None:
+            # Create line between the two breakwater heads
+            L1 = LineString([breakwaters['breakwaterhead'].iloc[heads['left']], 
+                            breakwaters['breakwaterhead'].iloc[heads['right']]])
+            
+            # Get indices for 'Open' cases
+            open_indices = self.output['Diffraction case'] == 'Open'
+            
+            if open_indices.any():
+                # Cache result locations to avoid repeated set_index calls
+                result_locations_indexed = self.result_locations.set_index('Naam')
+                
+                # For each Open case, find intersection between wave direction line and breakwater heads line
+                diffraction_points = []
+                for idx, row in self.output[open_indices].iterrows():
+                    # Get the result location geometry
+                    location_name = idx[0] if isinstance(idx, tuple) else idx
+                    location_geom = result_locations_indexed.loc[location_name, 'geometry']
+                    
+                    # Get the wave direction for this case
+                    wave_direction = self.hydraulic_loads['Wave direction'].loc[row.HydraulicLoadId]
+                    
+                    # Create line from location in wave direction
+                    L2 = LineString(extend_point_to_linestring(location_geom, wave_direction, (-10000, 10000)))
+                    
+                    # Find intersection
+                    intersection_point = find_nearest_intersection(L1, L2, location_geom)
+                    diffraction_points.append(intersection_point)
+                
+                # Assign the diffraction points
+                self.output.loc[open_indices, 'Diffraction point'] = diffraction_points
+
+        
 class Transmission:
 
     def __init__(self, simple_calculation):
@@ -882,8 +1120,8 @@ class Transmission:
             outdata.append(np.c_[[outarr[p] for p in params]].T)
             
         self.output[params] = np.vstack(outdata)
-                
-    def determine_transmission_zone(self, bwidx, wavedirection):
+
+    def determine_transmission_zone(self, bwidx, wavedirection, inflection=15.):
         """
         Calculate transmission zone based on wave direction and breakwater
         core.geometry.
@@ -923,18 +1161,16 @@ class Transmission:
         # Create sufficiently long lines to contain all points
         leftline = core.geometry.extend_point_to_linestring(
             breakwater.coords[leftindex],
-            (wavedirection - 15) % 360,
+            (wavedirection - inflection) % 360,
             (0, 100000)
         )
         rightline = core.geometry.extend_point_to_linestring(
             breakwater.coords[rightindex],
-            (wavedirection + 15) % 360,
+            (wavedirection + inflection) % 360,
             (0, 100000)
         )
 
         return leftline, rightline
-
-
 
     def _calc_transmission_coefficient(self, freeboard, Hs, alpha, beta):
         """
@@ -977,7 +1213,7 @@ class Transmission:
 
 class LocalWaveGrowth:
 
-    def __init__(self, simple_calculation, step=1.0, spread_angle=60.0):
+    def __init__(self, simple_calculation, step=1.0, spread_angle=45.0):
         """
         Class for calculating local wave growth.
 
@@ -1001,7 +1237,7 @@ class LocalWaveGrowth:
         self.datadir = self.mainmodel.datadir
 
         # Output dataframe
-        self.output = ExtendedDataFrame(columns=['Wind direction', 'Wind speed', 'Water level', 'U10', 'Feq', 'maxdir', 'Terrain level', 'Water depth', 'Hs,lg', 'Elg'], dtype=float)
+        self.output = ExtendedDataFrame(columns=['Wind direction', 'Wind speed', 'Water level', 'U10', 'Feq', 'Feqdir', 'Terrain level', 'Water depth', 'Hs,lg', 'Elg'], dtype=float)
         
         # Dictionaries for fetch
         self.max_fetch_per_direction = {}
@@ -1012,7 +1248,8 @@ class LocalWaveGrowth:
 
         # Round spread angle to step
         self.step = step
-        self.spread_angle = np.round(spread_angle/self.step) * self.step
+        self.spread_angle = spread_angle
+        # self.spread_angle = np.round(spread_angle/self.step) * self.step # niet langer nodig
 
     def initialize(self):
         """
@@ -1051,18 +1288,19 @@ class LocalWaveGrowth:
             The lines are drawn as the wind blows to the location; so the line for 45 degrees
             is going from the north-east harbor bound to the location in south-west direction.
         3.  Find fetch per direction.
-            Per fetch line the length until crossing the harbor bound is calculated.
+            Per fetch line the length until crossing the harbor bound is calculated. 
+            Either the maximum value, or a cos weighted equivalent fetch is determined.
         4.  Find the average bed level per direction.
             Per fetch line, the average bed level is calculated. For this the height of
-            the harbor terrain and the representative bed level is calculated.
-        5.  Look up the fetch length and terrain level for each hydraulic load.
+            the harbor areas and the representative bed level is calculated.
+        5.  Look up the fetch length and bed level for each hydraulic load.
             The wind-directions (inverted, step 1) are used in this step.
             Example for 45 degrees wind direction:
             -   Wind comes from North east (45 degrees)
             -   Look up the fetch line for this direction, this is the line
                 from the harbor bound to the location (pointing south-west),
                 also assigned to direction 45, even though the direction of the line
-                is 225 degrees.
+                is 225 degrees when (pointing away from the location).
         6.  Determine significant wave height with Bretschneider. Note that already present
             wave energy is not taken into account, which leads to an overestimation of the
             wave energy in these cases.
@@ -1081,7 +1319,7 @@ class LocalWaveGrowth:
             progress_function(1, 'Berekenen van lokale golfgroei - Bepalen maximale strijklengte')
 
         # Calculate maximum fetch per direction
-        self._find_fetch_per_direction()
+        self._find_fetch_per_direction(method='cos')
 
         if progress_function:
             progress_function(1, 'Berekenen van lokale golfgroei - Gemiddelde bodemhoogte')
@@ -1092,7 +1330,7 @@ class LocalWaveGrowth:
         for locname in self.result_locations['Naam']:
             
             # Calculate fetch for location by looking up each winddirection in the dataframe
-            for var1, var2 in zip(['max_fetch', 'max_direction', 'average_depth'], ['Feq', 'maxdir', 'Terrain level']):
+            for var1, var2 in zip(['equi_fetch', 'equi_fetch_direction', 'average_depth'], ['Feq', 'Feqdir', 'Terrain level']):
                 dct = self.fetchlines.loc[locname, var1].to_dict()
                 self.output.loc[locname, var2] = [dct[wdir] for wdir in winddirections]
 
@@ -1132,7 +1370,7 @@ class LocalWaveGrowth:
         self.directions = np.arange(0., 360., self.step)
         locations = sorted(self.result_locations['Naam'].tolist())
         index = pd.MultiIndex.from_product([locations, self.directions], names=['Location', 'Direction'])
-        self.fetchlines = gpd.GeoDataFrame(index=index, columns=['fetch', 'max_fetch', 'average_depth', 'geometry'], crs='epsg:28992')
+        self.fetchlines = gpd.GeoDataFrame(index=index, columns=['fetch', 'equi_fetch', 'equi_fetch_direction', 'average_depth', 'geometry'], crs='epsg:28992')
 
         # Loop trough locations
         lines = []
@@ -1156,10 +1394,9 @@ class LocalWaveGrowth:
         self.fetchlines['geometry'] = lines
         self.fetchlines['fetch'] = self.fetchlines.length
 
-
-    def _find_fetch_per_direction(self):
+    def _find_fetch_per_direction(self, method='cos'):
         """
-        Find the maximum fetch length in a direction with a spread.
+        Find the maximum or cos weighted fetch length in a direction with a spread.
 
         First the fetch lengths are calculated with a certain step (default 1
         degree), than the maximum within a certain spread are gathered.
@@ -1172,24 +1409,48 @@ class LocalWaveGrowth:
 
         # Create an empty dataframe to save the distances
         minangle, maxangle = -1*self.spread_angle/2., 359+self.spread_angle/2.
-        distances = pd.DataFrame(index=np.arange(minangle, maxangle+0.1*self.step, self.step), columns=['fetch'])
+        distances = pd.DataFrame(index=np.arange(minangle, maxangle+0.01*self.step, self.step), columns=['fetch'])
 
         for locname, linedata in self.fetchlines.groupby(level=0):
 
-            distances.loc[self.directions, 'fetch'] = linedata.length.values
+            # distances.loc[self.directions, 'fetch'] = linedata.length.values
+            # distances.loc[360:maxangle+0.1*self.step, 'fetch'] = distances.loc[0:(maxangle+0.1*self.step-360), 'fetch'].values
+            # distances.loc[minangle:0, 'fetch'] = distances.loc[(360+minangle):360, 'fetch'].values
 
-            # Fill the < 0  and > 360 angles in the distances dataframe
-            distances.loc[360:maxangle+0.1*self.step, 'fetch'] = distances.loc[0:(maxangle+0.1*self.step-360), 'fetch'].values
-            distances.loc[minangle:0, 'fetch'] = distances.loc[(360+minangle):360, 'fetch'].values
+            # interpolate data on distances dataframe
+            central = np.interp(distances.index,linedata.loc[locname].index,linedata.loc[locname].length,left=np.nan, right=np.nan)
+            left = np.interp(distances.index,linedata.loc[locname].index-360,linedata.loc[locname].length,left=np.nan, right=np.nan)
+            right = np.interp(distances.index,linedata.loc[locname].index+360,linedata.loc[locname].length,left=np.nan, right=np.nan)
+
+            # fill distances with interpolation results
+            distances.fetch = central
+            distances['fetch'].loc[distances.isna().to_numpy().squeeze() & ~np.isnan(left)] = left[distances.isna().to_numpy().squeeze() & ~np.isnan(left)]
+            distances['fetch'].loc[distances.isna().to_numpy().squeeze() & ~np.isnan(right)] = right[distances.isna().to_numpy().squeeze() & ~np.isnan(right)]
+            distances.interpolate(method='linear',inplace=True) # fill missing values on the boundary that does not overlap
 
             window = int(round(self.spread_angle // self.step)) + 1
-            # Determine maximum fetch by rolling maximum
-            maxfetch = distances['fetch'].rolling(window=window, center=True).max().dropna()
-            # Get max direction
-            maxdir = distances['fetch'].rolling(window=window, center=True).apply(pd.Series.idxmax, raw=False).dropna()
+            if method == 'max':
+                # Determine maximum fetch by rolling maximum
+                equi_fetch = distances['fetch'].rolling(window=window, center=True).max().dropna().values
+                # Get max direction
+                equi_fetch_direction = distances['fetch'].rolling(window=window, center=True).apply(pd.Series.idxmax, raw=False).dropna().values
+            elif method == 'cos':
+
+                def weighted_avg(series): 
+                    angle_from_center_fetch = np.arange(-self.spread_angle / 2, self.spread_angle / 2 + 1, 1)
+                    scaling_factors = np.cos(np.deg2rad(angle_from_center_fetch))
+                    scaled_value = np.sum(series.values * (scaling_factors**2))/(np.sum(scaling_factors)) # Scale the fetch values
+                    return scaled_value
+                
+                # Determine maximum fetch by rolling maximum
+                equi_fetch  = distances['fetch'].rolling(window=window, center=True).apply(weighted_avg, raw=False).dropna().values
+                # Get max direction
+                equi_fetch_direction = self.directions
+            else:
+                raise ValueError(f'Averaging method {method} for equivalent fetch is not a valid option')
             
-            self.fetchlines.loc[locname, 'max_fetch'] = maxfetch.values
-            self.fetchlines.loc[locname, 'max_direction'] = maxdir.values  % 360
+            self.fetchlines.loc[locname, 'equi_fetch'] = equi_fetch
+            self.fetchlines.loc[locname, 'equi_fetch_direction'] = equi_fetch_direction  % 360
 
     def _find_average_bed_level_per_direction(self):
         """
@@ -1227,7 +1488,6 @@ class LocalWaveGrowth:
 
         filepath = os.path.join(self.datadir, 'Up2U10', 'Up2U10.dat')
         self.windtrans = pd.read_csv(filepath, comment='%', header=None, delim_whitespace=True, names=['Upot', 'U10'], encoding='latin-1', usecols=[0,3])
-
 
     def _calc_U10(self, Upot):
         """
@@ -1408,8 +1668,11 @@ class WaveBreaking:
 
         # Determine wave breaking lines. This is per location, the fetch crossing the harbor terrain
         self.determine_wave_breaking_lines()
-        # Determine l0,p (diep water golflengte)
-        self.output.loc[:, 'L0,p'] = g / (2*np.pi) * self.output.loc[:, 'Tm-1,0'] ** 2
+        # Determine L0,p (diep water piek golflengte)
+        # self.output.loc[:, 'L0,p'] = g / (2*np.pi) * self.output.loc[:, 'Tm-1,0'] ** 2
+        
+        # Determine L0,p (ondiep water piek golflengte)
+        self.output.loc[:, 'L0,p'] = self.mainmodel.simple_calculation.calc_repr_wave_length(d=self.output.loc[:, 'Water level'].to_numpy()-self.schematisation.bedlevel, T=self.output.loc[:, 'Tm-1,0'].to_numpy())
 
         # Determine bottom level for all locations
         for location in self.schematisation.result_locations.itertuples():

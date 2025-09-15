@@ -1,5 +1,3 @@
-# Toegevoegd Svasek 05/10/18 - Hele nieuwe Class toegevoegd
-
 """
 Created on  : Tue Jul 11 11:34:36 2017
 Author      : Guus Rongen

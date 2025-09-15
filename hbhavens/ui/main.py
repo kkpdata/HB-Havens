@@ -22,7 +22,6 @@ from hbhavens.ui.tabs.dataviewer import DataViewerTab
 
 logger = logging.getLogger(__name__)
 
-
 class MainWindow(QtWidgets.QMainWindow):
 
     def __init__(self):
@@ -63,7 +62,6 @@ class MainWindow(QtWidgets.QMainWindow):
             'Gecombineerd - Resultaten',
         ]
         
-        # Toegevoegd Svasek 03/10/18 - Initialiseer Hares tab
         self.tabs_per_step['hares'] = [
             'HARES - Rekenen',
             'Gecombineerd - Resultaten',
@@ -92,7 +90,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self.tabs_per_step['finish']
         )
 
-        # Toegevoegd Svasek 03/10/18 - Initialiseer de opzet voor een berekening met Hares
         self.tabs_per_step['advanced_with_hares'] = (
             self.tabs_per_step['general'] +
             self.tabs_per_step['swan'] +
@@ -123,8 +120,7 @@ class MainWindow(QtWidgets.QMainWindow):
         
 
         sys.excepthook = test_exception_hook
-
-        
+     
     def set_calculation_method(self, methodname):
         # Set method
         self.method = methodname
@@ -279,7 +275,6 @@ class MainWindow(QtWidgets.QMainWindow):
         elif name == 'Gecombineerd - Resultaten':
             tab = tabs.AdvancedCombinedResultsTab(self)
             
-        # Toegevoegd Svasek 03/10/18 - Selecteer de Hares tab
         elif name == 'HARES - Rekenen':
             tab = tabs.HaresCalculationTab(self)
 
@@ -291,7 +286,6 @@ class MainWindow(QtWidgets.QMainWindow):
             raise ValueError('Tab name "{}" not recognized. Cannot open tab'.format(name))
 
         return tab
-
 
     def init_ui(self):
 
@@ -366,6 +360,11 @@ class MainWindow(QtWidgets.QMainWindow):
         manualAction.setStatusTip('Gebruikershandleiding')
         manualAction.triggered.connect(self.open_manual)
 
+        techAction = QtWidgets.QAction(self.getIcon('info.png'), 'Functioneel en Technisch ontwerp ...', self)
+        exitAction.setShortcut('Ctrl+M')
+        techAction.setStatusTip('Functioneel en Technisch ontwerp ')
+        techAction.triggered.connect(self.open_tech)
+
         aboutAction = QtWidgets.QAction(self.getIcon('info.png'),'Over...',self)
         aboutAction.setShortcut(QtGui.QKeySequence.HelpContents)
         aboutAction.setStatusTip('Over HB Havens')
@@ -382,16 +381,25 @@ class MainWindow(QtWidgets.QMainWindow):
 
         help_menu = menubar.addMenu('&Help')
         help_menu.addAction(manualAction)
+        help_menu.addAction(techAction)
         file_menu.addSeparator()
         help_menu.addAction(aboutAction)
 
     def open_manual(self):
 
-        handleiding = os.path.join(os.path.dirname(__file__), '..', '..', 'doc', 'Gebruikershandleiding', f"Gebruikershandleiding HB Havens - versie {self.mainmodel.appVersion}.pdf")
+        handleiding = os.path.join(os.path.dirname(__file__), '..', '..', 'doc', 'Gebruikershandleiding', f"Gebruikershandleiding HB Havens.pdf")
         handleiding = os.path.abspath(handleiding.lower())#.replace('/', '\\\\')
         url = QtCore.QUrl('file:///'+handleiding)
         if not QtGui.QDesktopServices.openUrl(url):
             QtWidgets.QMessageBox.warning(self, 'Openen gebruikershandleiding', f'Kan gebruikershandleiding niet openen vanaf: {handleiding}')
+        
+    def open_tech(self):
+
+        handleiding = os.path.join(os.path.dirname(__file__), '..', '..', 'doc', 'Functioneel en Technisch ontwerp', f"Functioneel en Technisch ontwerp HB Havens.pdf")
+        handleiding = os.path.abspath(handleiding.lower())#.replace('/', '\\\\')
+        url = QtCore.QUrl('file:///'+handleiding)
+        if not QtGui.QDesktopServices.openUrl(url):
+            QtWidgets.QMessageBox.warning(self, 'Openen functioneel en technisch ontwerp', f'Kan functioneel en technisch ontwerp niet openen vanaf: {handleiding}')
         
     def exit_hbhavens(self):
         """
@@ -484,7 +492,6 @@ class MainWindow(QtWidgets.QMainWindow):
         #     logger.info('Adding HARES calculations to visualisation tabs on loading.')
         #     self.tabwidgets['Overzicht'].add_table(method='hares_calculations')
         #     self.tabwidgets['Datavisualisatie'].add_table(method='hares_calculations')
-
 
         self.clearDirty()
         self.updateStatus('')
@@ -629,7 +636,7 @@ class MainWindow(QtWidgets.QMainWindow):
         versie : {self.mainmodel.appVersion}<br>
         {self.mainmodel.appDate}<br>
         <br>
-        &copy;2017 <a href="https://www.rijkswaterstaat.nl/over-ons/onze-organisatie/organisatiestructuur/water-verkeer-en-leefomgeving/index.aspx">Rijkwaterstaat-WVL</a><br>
+        &copy;2017 <a href="https://www.rijkswaterstaat.nl/over-ons/onze-organisatie/organisatiestructuur/water-verkeer-en-leefomgeving/index.aspx">Rijkswaterstaat-WVL</a><br>
         <br>
         ontwikkeld door : <br>
         &nbsp;&nbsp;<a href="https://www.hkv.nl">HKV lijn in water</a><br>

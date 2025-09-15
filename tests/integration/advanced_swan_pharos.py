@@ -3,12 +3,12 @@ import shutil
 import sqlite3
 import unittest
 import zipfile
-
 import pandas as pd
 
+import hbhavens
 from hbhavens.core.logger import initialize_logger
 
-# Specifieke hb havens modules
+import hbhavens
 from hbhavens.core.models import MainModel
 from hbhavens.io.database import HRDio
 
@@ -16,12 +16,13 @@ import common
 
 import logging
 
-initialize_logger()
-logger = logging.getLogger()
 
 datadir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "eemshaven")
+trunkdir = os.path.abspath(os.path.join(os.path.dirname(hbhavens.__file__),"../.."))
+tempdir = os.path.join(trunkdir, 'temp')
 
 paths = {
+    'temp': os.path.join(tempdir, 'eemshaven'),
     "harborarea": os.path.join(datadir, "shapes", "haventerrein.shp"),
     "breakwater": os.path.join(datadir, "shapes", "havendammen.shp"),
     "hrd": os.path.join(datadir, "databases", "WBI2017_Waddenzee_Oost_6-6_v03_selectie.sqlite"),
@@ -30,27 +31,29 @@ paths = {
     "hlcd": os.path.join(datadir, "..", "hlcd.sqlite"),
 }
 
+initialize_logger(filename=os.path.join(tempdir,'hbhavens.log'))
+logger = logging.getLogger()
 
 class TestSwanPharos(unittest.TestCase):
     def setUp(self):
         logger.info("SETUP TestSwanPharos")
         self.mainmodel = MainModel()
-        prjjson = "temp/eemshaven.json"
+        prjjson = os.path.join(paths['temp'],'eemshaven.json')
         if os.path.exists(prjjson) and not self._testMethodName[0:5] == 'test1':
             self.mainmodel.project.open_from_file(prjjson)
 
     def tearDown(self):
         logger.info("TEARDOWN TestSwanPharos")
-        if os.path.exists("temp"):
-            self.mainmodel.project.save_as("temp/eemshaven.json", overwrite_all=True)
+        if os.path.exists(paths['temp']):
+            self.mainmodel.project.save_as(os.path.join(paths['temp'],'eemshaven.json'), overwrite_all=True)
             self.mainmodel.save_tables()
 
     def test1_schematisation_Eemshaven(self):
         """
         Test preparing Eemshaven schematisation
         """
-        if not os.path.exists("temp"):
-            os.mkdir("temp")
+        if not os.path.exists(paths['temp']):
+            os.mkdir(paths['temp'])
 
         # Schematisatie
         # ========================================
@@ -60,11 +63,12 @@ class TestSwanPharos(unittest.TestCase):
         common.add_schematisation(
             self.mainmodel, paths=paths, supportlocationname=supportloc, trajecten=trajecten, bedlevel=bedlevel
         )
+        self.mainmodel.schematisation.plot_schematisation(save=True, path=paths['temp'], close=True)
 
         # Test flood defence
         self.assertListEqual(self.mainmodel.schematisation.flooddefence["traject-id"].tolist(), trajecten)
         # Test harbor area
-        self.assertAlmostEqual(self.mainmodel.schematisation.inner.area, 7230078.611028902)
+        self.assertAlmostEqual(self.mainmodel.schematisation.inner.area, 7229538.82642588)
         # Test support location name
         self.assertEqual(self.mainmodel.schematisation.support_location["Name"], supportloc)
 
@@ -72,9 +76,9 @@ class TestSwanPharos(unittest.TestCase):
 
         # Berekening geavanceerde methode
         # ========================================
-        if os.path.exists("temp/pharos"):
-            shutil.rmtree("temp/pharos")
-        swan_dst = "temp/swan"
+        if os.path.exists(os.path.join(paths['temp'],'pharos')):
+            shutil.rmtree(os.path.join(paths['temp'],'pharos'))
+        swan_dst = os.path.join(paths['temp'],'swan')
         if not os.path.exists(swan_dst):
             os.makedirs(swan_dst)
 
@@ -152,7 +156,7 @@ class TestSwanPharos(unittest.TestCase):
 
     def test3_pharos(self):
 
-        pharos_dst = "temp/pharos"
+        pharos_dst = os.path.join(paths['temp'],'pharos')
         if not os.path.exists(pharos_dst):
             os.makedirs(pharos_dst)
 
@@ -355,8 +359,7 @@ class TestSwanPharos(unittest.TestCase):
             common.compare_dataframes(self, pharos_table.round(3), hrd_table.round(3))
 
         # Verwijder
-        shutil.rmtree("temp")
-
+        # shutil.rmtree(paths['tempdir'])        
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

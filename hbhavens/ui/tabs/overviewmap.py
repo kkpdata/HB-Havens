@@ -30,6 +30,7 @@ import time
 class MoveThread(QtCore.QThread):
     """Thread to prevent calling update background too often.
     """
+
     def __init__(self, mapwidget, plotter):
         """
         Construct
@@ -47,6 +48,7 @@ class MoveThread(QtCore.QThread):
         # Update mapwidget
         self.mapwidget._update_background(None)
         self.plotter.splittermoved
+
 
 class OverviewMapTab(SplittedTab):
     """
@@ -91,19 +93,19 @@ class OverviewMapTab(SplittedTab):
         """
         if method == 'simple':
             # Create results table
-            table = self.mainmodel.simple_calculation.diffraction.output[['Lr', 'Beq', 'Kd', 'breakwater', 'Diffraction direction']]
+            table = self.mainmodel.simple_calculation.diffraction.output[['Lr', 'Beq', 'Kd', 'Diffraction point', 'Diffraction direction']]
             table = table.join(self.mainmodel.simple_calculation.transmission.output[['Kt']])
-            table = table.join(self.mainmodel.simple_calculation.wavegrowth.output[['maxdir', 'Hs,lg', 'Feq']])
+            table = table.join(self.mainmodel.simple_calculation.wavegrowth.output[['Feqdir', 'Hs,lg', 'Feq']])
             table = table.join(self.mainmodel.simple_calculation.wavebreaking.output[['Hs,max', 'Breaking length']])
             table = table.join(self.mainmodel.simple_calculation.combinedresults.output.set_index(table.index.names)[['Hs,totaal', 'Hs,out', 'Combined wave direction']])
-            table['breaking_fraction'] = 1 - np.minimum(table['Hs,out'].fillna(0.0) / table['Hs,totaal'].fillna(0.0), 1.0)
+            table['breaking_fraction'] = table['Hs,out'].fillna(0.0) / table['Hs,totaal'].fillna(0.0)
             table.loc[table['Hs,totaal'].eq(0.0), 'breaking_fraction'] = 0.0
             table.drop('Hs,max', axis=1, inplace=True)
             
             self.dataselector.add_table(
                 dataframe=table,
                 name='Eenvoudige methode',
-                result_variables=['Diffractie (Kd)', 'Transmissie (Kt)', 'Lokale Golfgroei (Hs,lg)', 'Golfbreking (-)', 'Gecombineerd (Hs)'],
+                result_variables=['Diffractie (Kd)', 'Transmissie (Kt)', 'Lokale Golfgroei (Hs,lg)', 'Golfbreking (Hs,gebroken/Hs,ongebroken)', 'Gecombineerd (Hs)'],
                 input_variables=self.mainmodel.hydraulic_loads.input_columns[:],
                 angle_variables=None
             )
@@ -172,7 +174,19 @@ class OverviewMapTab(SplittedTab):
         else:
             raise KeyError(f'Method not recognized: "{method}"')
 
-                        
+    def remove_table(self):
+        self.dataselector.destruct_dataselection()
+        self.dataselector.tables.clear()
+        self.dataselector.input_variables.clear()
+        self.dataselector.result_variables.clear()
+        self.dataselector.selectedtable = ''
+        self.dataselector.tableselector.combobox.setCurrentIndex(0)
+        while self.dataselector.tableselector.combobox.count() > 1:
+            self.dataselector.tableselector.combobox.removeItem(1)
+        self.plotter.terminate_geometries()
+        self.mapwidget.load_project()
+
+
 class MapWidget(QtWidgets.QWidget):
     """
     Widget with the background map
@@ -183,45 +197,53 @@ class MapWidget(QtWidgets.QWidget):
     """
 
     element_dct = {
-        'harborarea': {
-            'kwargs': {'facecolor': 'C0', 'alpha': 0.4, 'edgecolor': 'C0'},
-            'handle': 'patch',
-            'label': 'haventerrein'
-        },
-        'breakwaters': {
-            'kwargs': {'colors': 'C1', 'linewidths': 2, 'alpha': 1.0},
-            'handle': 'element',
-            'label': 'havendam(men)'
-        },
         'flooddefence': {
             'kwargs': {'colors': 'C3', 'linewidths': 2, 'alpha': 1.0},
             'handle': 'element',
-            'label': 'waterkering'
-        },
-        'support_locations': {
-            'kwargs': {'color': '0.1', 'marker': 'x', 'ms': 6, 'mew': 2, 'alpha': 1.0},
-            'handle': 'element',
-            'label': 'HRD-locaties'
-        },
-        'result_locations': {
-            'kwargs': {'color': '0.1', 'marker': 'o', 'ms': 2, 'alpha': 1.0},
-            'handle': 'element',
-            'label': 'uitvoerlocaties'
-        },
-        'entrance': {
-            'kwargs': {'lw': 1.5, 'color': '0.1', 'dashes': (2,2), 'alpha': 1.0},
-            'handle': 'element',
-            'label': 'haveningang'
+            'label': 'waterkering',
+            'zorder': 1
         },
         'inner': {
             'kwargs': {'color': 'grey', 'alpha': 0.3},
             'handle': 'patch',
-            'label': 'binnengaats gebied'
+            'label': 'binnengaats gebied',
+            'zorder': 2
+        },
+        'harborarea': {
+            'kwargs': {'facecolor': 'C0', 'alpha': 0.4, 'edgecolor': 'C0'},
+            'handle': 'patch',
+            'label': 'haventerrein',
+            'zorder': 3
+        },
+        'breakwaters': {
+            'kwargs': {'colors': 'C1', 'linewidths': 2, 'alpha': 1.0},
+            'handle': 'element',
+            'label': 'havendam(men)',
+            'zorder': 4
+        },
+        'entrance': {
+            'kwargs': {'lw': 1.5, 'color': '0.1', 'dashes': (2,2), 'alpha': 1.0},
+            'handle': 'element',
+            'label': 'haveningang',
+            'zorder': 5
+        },
+        'result_locations': {
+            'kwargs': {'color': '0.1', 'marker': 'o', 'ms': 2, 'alpha': 1.0},
+            'handle': 'element',
+            'label': 'uitvoerlocaties',
+            'zorder': 6
+        },
+        'support_locations': {
+            'kwargs': {'color': '0.1', 'marker': 'x', 'ms': 6, 'mew': 2, 'alpha': 1.0},
+            'handle': 'element',
+            'label': 'HRD-locaties',
+            'zorder': 7
         },
         'support_location': {
             'kwargs': {'color': '0.1', 'marker': 'o', 'ms': 10, 'alpha': 1.0, 'mfc': 'none'},
             'handle': 'element',
-            'label': 'steunpuntlocatie'
+            'label': 'steunpuntlocatie',
+            'zorder': 8
         }
     }
 
@@ -250,9 +272,7 @@ class MapWidget(QtWidgets.QWidget):
 
         self.update_tiles_thread = threads.UpdateTilesThread(self)
 
-
     def init_widget(self):
-        # Aangepast Svasek 31/10/2018 - Ander gebruik van figure, waardoor er in Spyder geen extra figuur opent
         # Create figure
         self.figure = Figure(figsize=(self.geometry().width() / 100., self.geometry().height() / 100.))
 
@@ -278,10 +298,12 @@ class MapWidget(QtWidgets.QWidget):
 
         self.comboboxitems = [
             ('Geen achtergrond', '', ''),
-            ('top10nl Achtergrondkaart', 'https://service.pdok.nl/brt/top10nl/wmts/v1_0?request=GetCapabilities&service=wmts', 'top10nl'),
+            ('Oeverlijnen', '', ''),
+            ('BRT top10nl ',                'https://service.pdok.nl/brt/top10nl/wmts/v1_0?request=GetCapabilities&service=wmts',           'top10nl'),
+            ('BRT achtergrondkaart Grijs',  'https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0?request=getcapabilities&service=wmts',  'grijs'),
+            ('BRT achtergrondkaart Water',  'https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0?request=getcapabilities&service=wmts',  'water'),
             ('Luchtfoto PDOK', 'https://service.pdok.nl/hwh/luchtfotorgb/wmts/v1_0?request=GetCapabilities&service=wmts', 'Actueel_ortho25'),
-            ('AHN3 0.5m DTM', 'https://service.pdok.nl/rws/ahn3/wmts/v1_0?request=getcapabilities&service=wmts', 'ahn3_05m_dtm'),
-            ('BRT achtergrondkaart Grijs', 'https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0?request=getcapabilities&service=wmts', 'grijs')
+            # ('AHN 0.5m DTM', 'https://service.pdok.nl/rws/ahn/wms/v1_0?SERVICE=WMS&request=GetCapabilities', 'dtm_05m'),
         ]
 
         # Get path to icon data
@@ -291,7 +313,7 @@ class MapWidget(QtWidgets.QWidget):
             # Add item to combobox with icon
             self.wmts_combobox.addItem(QtGui.QIcon(iconpath), text, userdata)
 
-        self.wmts_combobox.setCurrentIndex(0)
+        self.wmts_combobox.setCurrentIndex(1) # Oeverlijnen is default selected layer
         hbox.addWidget(self.wmts_combobox)
         self.wmts_combobox.currentIndexChanged.connect(self._set_WMTS_layer)
 
@@ -300,14 +322,13 @@ class MapWidget(QtWidgets.QWidget):
         self.bbox = self._get_filled_bbox(self.bbox)
         self.ax.set_xlim(self.bbox[0], self.bbox[2])
         self.ax.set_ylim(self.bbox[1], self.bbox[3])
+        self.landboundary, = self.ax.plot(*self.landboundary, color='0.8', zorder=-20, lw=0.75)
 
         # Add WMTS
         self.WMTS = None
-        self._set_WMTS_layer(0)
-
-        self.landboundary, = self.ax.plot(*self.landboundary, color='0.8', zorder=-20, lw=0.75)
-        if self.WMTSlayer == '':
-            self.landboundary.set_visible(True)
+        self._set_WMTS_layer(self.wmts_combobox.currentIndex())
+        # if self.WMTSlayer == '':
+        #     self.landboundary.set_visible(True)
         self.ax.axis('off')
 
         layout = QtWidgets.QVBoxLayout()
@@ -317,7 +338,6 @@ class MapWidget(QtWidgets.QWidget):
 
         self.setLayout(layout)
 
-    
     def load_project(self):
         """
         Set project elements visible
@@ -375,13 +395,11 @@ class MapWidget(QtWidgets.QWidget):
                 
         self.canvas.draw()
 
-
     def _set_WMTS_layer(self, idx):
         """
         Change the WMTS layer
         """
         try:
-            activated_idx = idx
             if idx == -1:
                 return None
     
@@ -389,22 +407,18 @@ class MapWidget(QtWidgets.QWidget):
             if not item:
                 return None
     
-            matched_idx = self.wmts_combobox.findData(item[2])
-            assert activated_idx == matched_idx
-    
             # Get layer name from combobox
             self.WMTSlayer = item[2]
             self.WMTSurl = item[1]
-    
-            # Remove the present WMTS
+            
+            # Remove the present WMTS if any
             if self.WMTS is not None:
                 self.WMTS.clean_all()
                 self.WMTS = None
-                self.landboundary.set_visible(True)
-    
-            # Skip if no background
-            if self.WMTSlayer != '':
-                self.landboundary.set_visible(False)
+
+            self.update_landboundary_visibility()
+
+            if item[0] not in ['Geen achtergrond', 'Oeverlijnen']:
                 # Add Web Mapping Tile Service
                 self.WMTS = WMTS(
                     self.WMTSurl,
@@ -413,6 +427,7 @@ class MapWidget(QtWidgets.QWidget):
                 )
     
             self._update_background(None)
+
         except Exception as e:
             print(e)
 
@@ -542,7 +557,6 @@ class MapWidget(QtWidgets.QWidget):
             self.show_labels()
         self.canvas.draw_idle()
 
-
     def _plot_gdf(self, gdf, kwargs={}, ax=None):
         """
         Plot geodataframe to axis
@@ -583,6 +597,19 @@ class MapWidget(QtWidgets.QWidget):
             collection, = ax.plot(*crds.T, **kwargs)
 
         return collection
+
+    def update_landboundary_visibility(self):
+        """Set landboundary visibility according to WMTS selection."""
+        # Get the current index and text from the combobox
+        idx = self.wmts_combobox.currentIndex()
+        if idx < 0:
+            return
+        text = self.wmts_combobox.itemText(idx)
+        # Show/hide landboundary based on the selected background
+        if text == 'Oeverlijnen':
+            self.landboundary.set_visible(True)
+        else:
+            self.landboundary.set_visible(False)
 
 
 class DataSelectorWidget(QtWidgets.QWidget):
@@ -626,6 +653,7 @@ class DataSelectorWidget(QtWidgets.QWidget):
         self.parameter_combobox.combobox.currentIndexChanged.connect(self.set_parameter)
         self.cbfigure = Figure(figsize=(1, 0.4))
         self.cbcanvas = FigureCanvasQTAgg(self.cbfigure)
+        self.cbcanvas.setMinimumSize(1, 1)
         self.cbcanvas.setContentsMargins(5, 5, 5, 5)
         self.cbax = self.cbfigure.add_axes([0.1, 0.5, 0.8, 0.48])
         self.cbax.set_yticks([])
@@ -670,15 +698,15 @@ class DataSelectorWidget(QtWidgets.QWidget):
         if self.selected_table == 'Eenvoudige methode':
             table = self.tables[self.selected_table]
             if self.selected_process == 'Diffractie (Kd)':
-                self.cmaprange = (0.0, table['Kd'].max())
+                self.cmaprange = (0.0, np.maximum(0.1,table['Kd'].max()))
             elif self.selected_process == 'Transmissie (Kt)':
-                self.cmaprange = (0.0, table['Kt'].max())
+                self.cmaprange = (0.0, np.maximum(0.1,table['Kt'].max()))
             elif self.selected_process == 'Lokale Golfgroei (Hs,lg)':
-                self.cmaprange = (0.0, table['Hs,lg'].max())
-            elif self.selected_process == 'Golfbreking (-)':
+                self.cmaprange = (0.0, np.maximum(0.1,table['Hs,lg'].max()))
+            elif self.selected_process == 'Golfbreking (Hs,gebroken/Hs,ongebroken)':
                 self.cmaprange = (0, 1.0)
             elif self.selected_process == 'Gecombineerd (Hs)':
-                self.cmaprange = (0.0, table['Hs,out'].max())
+                self.cmaprange = (0.0, np.maximum(0.1,table['Hs,out'].max()))
             else:
                 self.cmaprange = None
             self.set_colorbar()
@@ -710,7 +738,7 @@ class DataSelectorWidget(QtWidgets.QWidget):
             cbar_ticks = np.linspace(*self.cmaprange, num=6)
             self.colorbar.set_ticks(np.linspace(0, 1, num=6))
             self.colorbar.set_ticklabels([f'{val:.2f}' for val in cbar_ticks])
-            self.colorbar._draw_all()
+            # self.colorbar._draw_all()
             
         self.cbcanvas.draw_idle()
         
@@ -760,7 +788,7 @@ class DataSelectorWidget(QtWidgets.QWidget):
         """
 
         # Check if all columns are present
-        tabcolumns = dataframe.columns.array
+        # tabcolumns = dataframe.columns.array
         # for col in input_variables + list(itertools.chain(*result_variables.values())):
         #     if col not in tabcolumns:
         #         raise KeyError(f'Column "{col}" not in dataframe. ({", ".join(tabcolumns)}).')
@@ -803,7 +831,7 @@ class DataSelectorWidget(QtWidgets.QWidget):
         elif len(loadid) == 1:
             self.hydraulic_load_id = loadid[0]
             text = self.hydraulic_loads.loc[loadid[0], self.hydraulic_loads.result_columns].to_dict()
-            text = '\n'.join([f'{k}:\t{v:.1f}' for k, v in text.items()])
+            text = '\n'.join([f'{k:20s}: {v:12.1f}' for k, v in text.items()])
             self.load_label.setText(text)
         
         # No data case
@@ -840,7 +868,8 @@ class DataSelectorWidget(QtWidgets.QWidget):
             self.loadidx = self.table.index.get_level_values(level)
         else:
             raise KeyError('Expected "HydraulicLoadId" in index or column.')
-    
+
+
 class ResultsPlotter:
 
     def __init__(self, simple_calculation, mapwidget, dataselector):
@@ -902,30 +931,30 @@ class ResultsPlotter:
         if process == 'Diffractie (Kd)':
             # Lines from location to breakwater head
             for name in self.result_locations['Naam'].array:
-                self.elements[name], = self.ax.plot([], [], color='grey', lw=0.75)
-            # Width between breakwater heads perp to flow direction
-            self.elements['Beq'], = self.ax.plot([], [], color='k', lw=1.25)
+                self.elements[name], = self.ax.plot([], [], color='grey', lw=0.75, zorder=12)
+            # Width between breakwater heads perp to wave direction
+            self.elements['Beq'], = self.ax.plot([], [], color='k', lw=1.25, zorder=10)
             # Representative Wave length
-            self.elements['Lr'], = self.ax.plot([], [], color='k', lw=1.25)
+            self.elements['Lr'], = self.ax.plot([], [], color='k', lw=1.25, zorder=11)
 
         elif process == 'Transmissie (Kt)':
             for breakwater in self.breakwaters.itertuples():
                 # Shading area per breakwater
-                self.elements[breakwater.Index] = self.ax.add_patch(mplPolygon([(0, 0), (0, 0)], color='grey', lw=0.75, alpha=0.2))
+                self.elements[breakwater.Index] = self.ax.add_patch(mplPolygon([(0, 0), (0, 0)], color='green', lw=0.75, alpha=0.2, zorder=13))
                 # Text at breakwater
                 pt = breakwater.geometry.interpolate(breakwater.geometry.length / 2)
                 rotation = np.degrees(geometry.get_orientation(breakwater.geometry, pt))
-                self.elements[f'vb_{breakwater.Index}'] = self.ax.text(pt.x, pt.y, '', rotation=(rotation+90) % 180 - 90, va='bottom', ha='center')
+                self.elements[f'vb_{breakwater.Index}'] = self.ax.text(pt.x, pt.y, '', rotation=(rotation+90) % 180 - 90, va='bottom', ha='center', zorder=16)
         
         elif process == 'Lokale Golfgroei (Hs,lg)':
             # Fetch lines
             for name in self.result_locations['Naam'].array:
-                self.elements[name], = self.ax.plot([], [], color='grey', lw=0.75)
+                self.elements[name], = self.ax.plot([], [], color='grey', lw=0.75, zorder=12)
 
-        elif process == 'Golfbreking (-)':
+        elif process == 'Golfbreking (Hs,gebroken/Hs,ongebroken)':
             # Wave direction lines
             for name in self.result_locations['Naam'].array:
-                self.elements[name], = self.ax.plot([], [], color='grey', lw=0.75)
+                self.elements[name], = self.ax.plot([], [], color='grey', lw=0.75, zorder=12)
 
         # If no data visualisation
         if process == '':
@@ -943,14 +972,14 @@ class ResultsPlotter:
             self.circlepath = np.c_[np.cos(theta) * 0.3, np.sin(theta) * 0.3]
 
             self.elements['scatter'] = PatchCollection(
-                [PathPatch(matplotlib.path.Path(self.markerpath * 300 + crd[None, :]), facecolor='none', edgecolor='k') for crd in self.resultxy])
+                [PathPatch(matplotlib.path.Path(self.markerpath * 300 + crd[None, :]), facecolor='none', edgecolor='k') for crd in self.resultxy],
+                zorder=14)
             self.ax.add_collection(self.elements['scatter'])
             
             self.set_location_values(np.zeros(len(self.result_locations)))
             self.mapwidget.remove_plot_element('support_locations')
             self.mapwidget.remove_plot_element('result_locations')
-
-    
+  
     def set_visible(self, visible):
         """Method to make drawn elements (in)visible
         
@@ -980,16 +1009,16 @@ class ResultsPlotter:
             self.mapwidget.set_visible('support_locations')
             self.mapwidget.set_visible('result_locations')
 
-    def set_diffraction_lines(self, bwhead, Lr, Beq, wave_direction):
+    def set_diffraction_lines(self, Lr, Beq, wave_direction, diffr_point):
         """
         Get lines for diffraction
         """
         for row in self.result_locations.itertuples():
-            if np.isnan(bwhead[row.Naam]):
-                x, y = [], []
+            crd = diffr_point[row.Naam]
+            if crd is None:
+                x,y = [], []
             else:
-                crd = self.coords[f'bwhead{int(bwhead[row.Naam])}']
-                x, y = [row.geometry.x, crd[0]], [row.geometry.y, crd[1]]
+                x, y = [row.geometry.x, crd.x], [row.geometry.y, crd.y]
             self.elements[row.Naam].set_data(x, y)
 
         # Plot a line for the representative wave length and equivalent opening width
@@ -1035,7 +1064,7 @@ class ResultsPlotter:
                 self.elements[row.Naam].set_data([], [])
             else:
                 line = geometry.extend_point_to_linestring(row.geometry, direction[row.Naam], (0, -10000), as_LineString=True)
-                line = self.area_union.intersection(line)
+                line = self.mainmodel.schematisation.area_union.intersection(line)
                 if line.distance(row.geometry) < 1e-8: # check if line extends from result location
                     if isinstance(line, LineString):
                         if line.is_empty:
@@ -1089,7 +1118,6 @@ class ResultsPlotter:
             paths.append(PathPatch(matplotlib.path.Path(np.array(list(zip(xcrds * scale + xy[0], ycrds * scale + xy[1]))))))
         collection.set_paths(paths)
                     
-
     def set_load(self):
         """
         Changes the location for which the data is visualized.
@@ -1114,14 +1142,15 @@ class ResultsPlotter:
         """
         Method to save background
         """
-        
+
         for element in self.elements.values():
             element.set_visible(False)
             
         self.canvas.draw()
         self.bg_limits = self.ax.get_xlim() + self.ax.get_ylim()
+        # self.mapwidget.update_landboundary_visibility()
         self.background = self.canvas.copy_from_bbox(self.ax.bbox)
-        self.layer = self.mapwidget.WMTSlayer
+        self.layer = self.mapwidget.wmts_combobox.currentIndex()
                 
         for element in self.elements.values():
             element.set_visible(True)
@@ -1129,8 +1158,9 @@ class ResultsPlotter:
     def draw_geometries(self):
         """Update elements and restore background.
         """
+
         # Check if the bounding box has changed
-        if self.bg_limits != (self.ax.get_xlim() + self.ax.get_ylim()) or self.mapwidget.WMTSlayer != self.layer or self.splittermoved:
+        if self.bg_limits != (self.ax.get_xlim() + self.ax.get_ylim()) or self.mapwidget.wmts_combobox.currentIndex() != self.layer or self.splittermoved:
             self.get_background()
             self.splittermoved = False
         
@@ -1138,13 +1168,20 @@ class ResultsPlotter:
         self.canvas.restore_region(self.background)
         for element in self.elements.values():
             self.ax.draw_artist(element)
-        
+
         self.canvas.blit(self.ax.bbox)
+        self.mapwidget.update_landboundary_visibility()
         
     def _get_process_load_data(self):
 
         table = self.dataselector.tables[self.dataselector.selected_table]
-        maxvals = table.max(axis=0)
+        maxvals = {}
+        for col in table.columns:
+            # Exclude geometry types
+            if pd.api.types.is_numeric_dtype(table[col]):
+                maxvals[col] = table[col].max()
+            else:
+                maxvals[col] = None
 
         # Prepare data
         columns = table.columns.tolist()
@@ -1158,15 +1195,15 @@ class ResultsPlotter:
                 'wavedir': self.hydraulic_loads.at[hydraulic_load_id, 'Wave direction'],
                 'Lr': selectie.iat[0, columns.index('Lr')],
                 'Beq': selectie.iat[0, columns.index('Beq')],
-                'Kd': selectie['Kd'] / maxvals['Kd'],
-                'bwhead': selectie['breakwater'].to_dict(),
+                'Kd': selectie['Kd'],
+                'diffr_point': selectie['Diffraction point'].to_dict(),
                 'diffr_angle': (selectie['Diffraction direction'] + 180) % 360
             }
         
         elif process == 'Transmissie (Kt)':
             process_data = {
                 'wavedir': self.hydraulic_loads.at[hydraulic_load_id, 'Wave direction'],
-                'Kt': selectie['Kt'] / maxvals['Kt'],
+                'Kt': selectie['Kt'],
                 'freeboard': [bw.hoogte - self.hydraulic_loads.at[hydraulic_load_id, self.hydraulic_loads.wlevcol] for bw in self.breakwaters.itertuples()]
             }
 
@@ -1174,12 +1211,12 @@ class ResultsPlotter:
             process_data = {
                 'winddir': self.hydraulic_loads.at[hydraulic_load_id, 'Wind direction'],
                 'wavedir': self.hydraulic_loads.at[hydraulic_load_id, 'Wave direction'],
-                'wavedirs': selectie['maxdir'].to_dict(),
-                'Hs': selectie['Hs,lg'] / maxvals['Hs,lg'],
+                'wavedirs': selectie['Feqdir'].to_dict(),
+                'Hs fraction': selectie['Hs,lg'] / maxvals['Hs,lg'],
                 'Feq': selectie['Feq'].to_dict()
             }
 
-        elif process == 'Golfbreking (-)':
+        elif process == 'Golfbreking (Hs,gebroken/Hs,ongebroken)':
             process_data = {
                 'wavedir': self.hydraulic_loads.at[hydraulic_load_id, 'Wave direction'],
                 'breaking_fraction': selectie['breaking_fraction'] / maxvals['breaking_fraction'],
@@ -1210,7 +1247,7 @@ class ResultsPlotter:
         if process == 'Diffractie (Kd)':
             self.set_wave_direction(process_data['wavedir'])
             self.set_location_values(process_data['Kd'].sort_index().array, rotation=process_data['diffr_angle'])
-            self.set_diffraction_lines(process_data['bwhead'], process_data['Lr'], process_data['Beq'], process_data['wavedir'])
+            self.set_diffraction_lines(process_data['Lr'], process_data['Beq'], process_data['wavedir'], process_data['diffr_point'])
 
         elif process == 'Transmissie (Kt)':
             self.set_wave_direction(process_data['wavedir'])
@@ -1219,10 +1256,10 @@ class ResultsPlotter:
 
         elif process == 'Lokale Golfgroei (Hs,lg)':
             self.set_wave_direction(process_data['winddir'])
-            self.set_location_values(process_data['Hs'].sort_index().array, rotation=(process_data['winddir'] + 180) % 360)
+            self.set_location_values(process_data['Hs fraction'].sort_index().array, rotation=(process_data['winddir'] + 180) % 360)
             self.set_fetch_lines(process_data['wavedirs'], process_data['Feq'])
 
-        elif process == 'Golfbreking (-)':
+        elif process == 'Golfbreking (Hs,gebroken/Hs,ongebroken)':
             self.set_wave_direction(process_data['wavedir'])
             self.set_location_values(process_data['breaking_fraction'], rotation=(process_data['wavedir'] + 180) % 360)
             self.set_breaking_lines(process_data['wavedir'],process_data['breaking_fraction'])
@@ -1242,7 +1279,7 @@ class ResultsPlotter:
             
         # x0, y0 = line[0]
         # dx, dy = (line[1] - line[0])
-        self.elements['arrow'] = self.ax.arrow(*line[0], *(line[1] - line[0]), length_includes_head=True, head_width=scale/4, head_length=scale/2, color='k')
+        self.elements['arrow'] = self.ax.arrow(*line[0], *(line[1] - line[0]), length_includes_head=True, head_width=scale/4, head_length=scale/2, color='k', zorder=15)
     
     def set_parameter(self):
         """

@@ -22,8 +22,11 @@ Binnen de geavanceerde golftransformatiemethode wordt gebruik gemaakt van de mod
 
 # Versies en aanpassingen
 
-De actuele versie is 23.1.1 en dateert van december 2023.
-De belangrijkste aanpassing ten opzichte van de vorige release (versie 2.0, uit september 2019) betreft het updaten van gebruikte Python packages.
+De actuele versie is 25.1.1 en dateert van augustus 2025.
+De belangrijkste aanpassingen ten opzichte van de vorige release (versie 23.1.1, uit december 2023) betreffen aanpassingen in de eenvoudige methode:
+* de bepaling van de rekenwaarde van de strijklengte voor de lokale golfgroei 
+* de bepaling van de golfrichting als gevolg van diffractie
+Dit heeft invloed op de rekenresultaten van de eenvoudige methode.
 
 # Technische informatie
 

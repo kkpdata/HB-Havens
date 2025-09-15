@@ -9,7 +9,7 @@ Description : Geoemtry classes and functions
 import geopandas as gpd
 import numpy as np
 from scipy.interpolate import interp1d
-from shapely.geometry import LineString, MultiLineString, MultiPolygon, Point, Polygon
+from shapely.geometry import LineString, MultiLineString, MultiPolygon, Point, Polygon, MultiPoint
 from shapely.ops import polygonize
 
 
@@ -97,8 +97,8 @@ def extend_point_to_linestring(pt, direction, extend, as_LineString=False):
         direction (nautical) in which the line is extended
     extend : real or tuple with reals
         extend of the requested line
-    return_coords : boolean, default False
-        to return the coordinates instead of a LineString
+    as_LineString : boolean, default False
+        return a LineString instead of a Line
 
     """
     if isinstance(pt, Point):
@@ -358,23 +358,26 @@ def find_nearest_intersection(L1, L2, P):
 
     """
 
-    # Get single intersection
-    intersections = L1.intersection(L2)
-    if isinstance(intersections, Point):
-        return intersections
-
     # Check if lines intersect
     if not L1.intersects(L2):
         return None
+    else:
+        # Get single intersection
+        intersections = L1.intersection(L2)
+    
+    if isinstance(intersections, Point):
+        return intersections
+    elif isinstance(intersections, MultiPoint):
+        intersections = list(intersections.geoms)
 
-    # Convert tuple to point if necessary
-    if isinstance(P, tuple):
-        P = Point(P)
+        # Convert tuple to point if necessary
+        if isinstance(P, tuple):
+            P = Point(P)
 
-    # If multiple intersections
-    argmin = np.argmin([isect.distance(P) for isect in intersections])
-    return intersections[argmin]
-
+        argmin = np.argmin([isect.distance(P) for isect in intersections])
+        return intersections[argmin]
+    else:
+        raise ValueError("The intersection did not result in the expected outcome")
 
 
 def snap_flooddefence_lines(lines, max_snap_dist=np.inf):
@@ -419,8 +422,6 @@ def snap_flooddefence_lines(lines, max_snap_dist=np.inf):
 
     # Adjust all points
     headpoints[startindex, :] = np.nan
-    # Aangepast Svasek 05/10/18 - Printen van de startindex is overbodig
-#    print(startindex)
 
     for _ in range(len(lines)-1):
         # Determine other point of line

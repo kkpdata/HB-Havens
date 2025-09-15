@@ -4,6 +4,8 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
+from unit.core.simple import LocalWaveGrowth
+
 from integration import simple_single_breakwater
 from integration import simple_double_breakwater
 from integration import simple_oosterschelde
@@ -19,27 +21,31 @@ from integration import advanced_swan_hares
 from integration import advanced_zoet
 from integration import advanced_zoet_terugrekenen
 
-
-# initialize the test suite
+# initialize the TestLoader
 loader = unittest.TestLoader()
-suite = unittest.TestSuite()
 
-# add tests to the test suite
-suite.addTests(loader.loadTestsFromModule(simple_single_breakwater))
-suite.addTests(loader.loadTestsFromModule(simple_double_breakwater))
-suite.addTests(loader.loadTestsFromModule(simple_oosterschelde))
-suite.addTests(loader.loadTestsFromModule(simple_zoet_bovenrivieren))
-suite.addTests(loader.loadTestsFromModule(simple_zoet_benedenrivieren))
-suite.addTests(loader.loadTestsFromModule(simple_zoet_meren))
-suite.addTests(loader.loadTestsFromModule(simple_zoet_vijd))
-suite.addTests(loader.loadTestsFromModule(simple_zoet_europoort))
-suite.addTests(loader.loadTestsFromModule(simple_zoet_vzm))
-suite.addTests(loader.loadTestsFromModule(advanced_swan))
-suite.addTests(loader.loadTestsFromModule(advanced_swan_pharos))
-suite.addTests(loader.loadTestsFromModule(advanced_swan_hares))
-suite.addTests(loader.loadTestsFromModule(advanced_zoet))
-suite.addTests(loader.loadTestsFromModule(advanced_zoet_terugrekenen))
+# add tests to suiteUnit
+suiteUnit = unittest.TestSuite()
+suiteUnit.addTests(loader.loadTestsFromModule(LocalWaveGrowth))
 
-# initialize a runner, pass it your suite and run it
+# add tests to suiteIntegration
+suiteIntegration = unittest.TestSuite()
+suiteIntegration.addTests(loader.loadTestsFromModule(simple_single_breakwater))
+suiteIntegration.addTests(loader.loadTestsFromModule(simple_double_breakwater))
+suiteIntegration.addTests(loader.loadTestsFromModule(simple_oosterschelde))
+suiteIntegration.addTests(loader.loadTestsFromModule(simple_zoet_bovenrivieren))
+suiteIntegration.addTests(loader.loadTestsFromModule(simple_zoet_benedenrivieren))
+suiteIntegration.addTests(loader.loadTestsFromModule(simple_zoet_meren))
+suiteIntegration.addTests(loader.loadTestsFromModule(simple_zoet_vijd))
+suiteIntegration.addTests(loader.loadTestsFromModule(simple_zoet_europoort))
+suiteIntegration.addTests(loader.loadTestsFromModule(simple_zoet_vzm))
+suiteIntegration.addTests(loader.loadTestsFromModule(advanced_swan))
+suiteIntegration.addTests(loader.loadTestsFromModule(advanced_swan_pharos))
+suiteIntegration.addTests(loader.loadTestsFromModule(advanced_swan_hares))
+suiteIntegration.addTests(loader.loadTestsFromModule(advanced_zoet))
+suiteIntegration.addTests(loader.loadTestsFromModule(advanced_zoet_terugrekenen))
+
+# initialize a runner, pass it your suites and run it
 runner = unittest.TextTestRunner(verbosity=3)
-result = runner.run(suite)
+result = runner.run(suiteUnit)
+result = runner.run(suiteIntegration)

@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
-# Toegevoegd Svasek 31/10/2018 - Ander gebruik van figure, waardoor er in Spyder geen extra figuur opent
 from matplotlib.figure import Figure
 from PyQt5 import Qt, QtCore, QtGui, QtWidgets
 
@@ -601,32 +600,32 @@ class NotificationDialog(QtWidgets.QMessageBox):
 
         return result
 
-def show_dialog(text, severity='information', details=''):
-    msg = QtWidgets.QMessageBox()
+    def show_dialog(text, severity='information', details=''):
+        msg = QtWidgets.QMessageBox()
 
-    if len(text) < 100:
-        text = text+' '*(100-len(text))
+        if len(text) < 100:
+            text = text+' '*(100-len(text))
 
-    msg.setText(text)
+        msg.setText(text)
 
-    if severity == 'warning':
-        msg.setIcon(QtWidgets.QMessageBox.Warning)
-        msg.setWindowTitle("HB Havens: Waarschuwing")
-    elif severity == 'critical':
-        msg.setIcon(QtWidgets.QMessageBox.Critical)
-        msg.setWindowTitle("HB Havens: Foutmelding")
-    elif severity == 'information':
-        msg.setIcon(QtWidgets.QMessageBox.Information)
-        msg.setWindowTitle("HB Havens: Mededeling")
+        if severity == 'warning':
+            msg.setIcon(QtWidgets.QMessageBox.Warning)
+            msg.setWindowTitle("HB Havens: Waarschuwing")
+        elif severity == 'critical':
+            msg.setIcon(QtWidgets.QMessageBox.Critical)
+            msg.setWindowTitle("HB Havens: Foutmelding")
+        elif severity == 'information':
+            msg.setIcon(QtWidgets.QMessageBox.Information)
+            msg.setWindowTitle("HB Havens: Mededeling")
 
 
-    if details:
-        msg.setDetailedText("Details:\n{}".format(details))
+        if details:
+            msg.setDetailedText("Details:\n{}".format(details))
 
-    # msg.findChild(QtWidgets.QGridLayout).setColumnMinimumWidth(1, 250)
-    msg.setStandardButtons(QtWidgets.QMessageBox.Ok)
+        # msg.findChild(QtWidgets.QGridLayout).setColumnMinimumWidth(1, 250)
+        msg.setStandardButtons(QtWidgets.QMessageBox.Ok)
 
-    msg.exec_()
+        msg.exec_()
 
 class GetSwanParametersDialog(QtWidgets.QDialog):
     """
@@ -882,7 +881,6 @@ class GetSwanParametersDialog(QtWidgets.QDialog):
 
         self.input_elements['swanfolder'].set_value(path)
 
-# Toegevoegd Svasek 08/10/18 - Scherm dat vraagt om de locatie van de Hares uitvoer
 class GetHaresFolderDialog(QtWidgets.QDialog):
     """
     Dialog window to get:
@@ -1231,7 +1229,6 @@ class GetPharosSchematisationParametersDialog(QtWidgets.QDialog):
         self.succeeded = False
         self.reject()
 
-
 class DefineUncertaintiesDialog(QtWidgets.QDialog):
 
     def __init__(self, parent=None):
@@ -1275,6 +1272,7 @@ class DefineUncertaintiesDialog(QtWidgets.QDialog):
         hlayout.addLayout(vlayout)
 
         vlayout = QtWidgets.QVBoxLayout()
+        
         # Model uncertainties support location
         #----------------------------------------------------------------
         label = QtWidgets.QLabel()
@@ -1377,7 +1375,6 @@ class DefineUncertaintiesDialog(QtWidgets.QDialog):
 
         self.parent.adjust_selection(uncertainties=uncertainties, option=option)
 
-        # Toegevoegd Svasek 31/10/2018 - Sluit het onzekerheden input scherm als er op opslaan gedrukt wordt
         self.close()
 
 class ResultScatterDialog(QtWidgets.QDialog):
@@ -1405,7 +1402,6 @@ class ResultScatterDialog(QtWidgets.QDialog):
                 self.results = modelunctab.pharos.calculation_results
                 self.result_parameters = modelunctab.swan.result_parameters
 
-            # Toegevoegd Svasek 04/10/18 - Gebruik Hares resultaten
             # With HARES
             if calculation_settings['include_hares']:
                 self.results = modelunctab.hares.calculation_results
@@ -1563,7 +1559,6 @@ class ResultScatterDialog(QtWidgets.QDialog):
         self.ax.set_ylabel('{} uitvoerlocatie'.format(self.input_parameter))
         # Set data
         self._set_data()
-
 
 class DefineExportNameAndDatabase(QtWidgets.QDialog):
 

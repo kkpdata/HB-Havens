@@ -1,0 +1,2 @@
+vvc103me1r7.pdf: Memo (finale versie) over de oorzaak van bi-modaliteit in het SWAN model voor de IJmuiden toepassing uitmondend in een advies om te komen tot passende randvoorwaarden en verbeteringen aan het SWAN model. 
+Memo geavanceerde methode in HB Havens (083964157 A).pdf": Memo met aandachtspunten voor het toepassen van de geavanceerde methode in HB Havens op basis van SWAN of SWAN en PHAROS.

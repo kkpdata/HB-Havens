@@ -13,9 +13,11 @@ import warnings
 import shutil
 from PyQt5 import QtWidgets
 
-trunkdir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-if trunkdir not in sys.path:
-    sys.path.append(trunkdir)
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from common import set_paths
+
+case = 'lauwersoog'
+trunkdir, tempdir, datadir = set_paths(__file__, case)
 from hbhavens.ui.main import MainWindow
 
 if not sys.warnoptions:
@@ -25,24 +27,14 @@ if not QtWidgets.QApplication.instance():
     app = QtWidgets.QApplication(sys.argv)
 else:
     app = QtWidgets.QApplication.instance()
-app.setApplicationVersion('23.1.1')
+
+if os.path.exists(os.path.join(tempdir, case, case)):
+    shutil.rmtree(os.path.join(tempdir, case, case), ignore_errors=True)
+shutil.copy2(os.path.join(datadir, case + '.json'), os.path.join(tempdir, case))
+shutil.copytree(os.path.join(datadir, case), os.path.join(tempdir, case, case))
+shutil.copy2(os.path.join(datadir, 'databases', 'WBI2017_Lauwersoog_steunpunt' + '.sqlite'), os.path.join(tempdir, case))
 
 ex = MainWindow()
-
-datadir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
-tempdir = os.path.join(os.path.dirname(trunkdir),'temp')
-case = 'lauwersoog'
-
-if not os.path.exists(tempdir):
-    os.mkdir(tempdir)
-
-if os.path.exists(os.path.join(tempdir, case)):
-    shutil.rmtree(os.path.join(tempdir, case), ignore_errors=True)
-if os.path.isfile(os.path.join(tempdir, case + '.json')):
-    os.remove(os.path.join(tempdir, case + '.json'))
-
-shutil.copy2(os.path.join(datadir, case, case + '.json'), tempdir)
-shutil.copytree(os.path.join(datadir, case, case), os.path.join(tempdir, case))
-ex.open_project(fname=os.path.join(tempdir, case + '.json'))
+ex.open_project(fname=os.path.join(tempdir, case, case + '.json'))
 
 app.exec_()

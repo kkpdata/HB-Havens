@@ -24,7 +24,6 @@ if not QtWidgets.QApplication.instance():
     app = QtWidgets.QApplication(sys.argv)
 else:
     app = QtWidgets.QApplication.instance()
-app.setApplicationVersion('23.1.1')
 
 ex = MainWindow()
 

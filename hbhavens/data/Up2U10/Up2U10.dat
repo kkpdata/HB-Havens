@@ -1,6 +1,6 @@
 % Titel:  Up2U10.dat 
-% Doel:	  Transformatie van potentiële wind naar de windsnelheid op 10 m hoogte.
-% Bron:   Gebruikershandleiding HB Havens - versie 23.1.1 en referenties daarin.
+% Doel:	  Transformatie van potentiï¿½le wind naar de windsnelheid op 10 m hoogte.
+% Bron:   Gebruikershandleiding HB Havens en referenties daarin.
 % Datum:  29 september 2023
 % Auteur: M.P. Benit
 % Upot [m/s]	U10 oud [m/s]	U10 nieuw [m/s]	U10 Bretschneider [m/s]

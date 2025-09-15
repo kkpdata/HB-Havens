@@ -22,7 +22,7 @@ def show_thread_error(err_info):
 
     sys.__excepthook__(exctype, value, tback)
 
-    dialogs.show_dialog(
+    dialogs.NotificationDialog.show_dialog(
         text='\n'.join(traceback.format_exception_only(exctype, value)),
         severity='critical',
         details='\n'.join(traceback.format_tb(tback))
@@ -75,6 +75,7 @@ class SimpleCalculationThread(QtCore.QThread):
             self.update_progress_signal.emit(0, 'Berekening mislukt.')
             err_info = sys.exc_info()
             self.error_signal.emit(err_info)
+
 
 class ImportFilesThread(QtCore.QThread):
     """
@@ -144,6 +145,7 @@ class ImportFilesThread(QtCore.QThread):
             err_info = sys.exc_info()
             self.error_signal.emit(err_info)
 
+
 class ImportPharosFilesThread(QtCore.QThread):
     """
     Thread for importing output files
@@ -204,7 +206,7 @@ class ImportPharosFilesThread(QtCore.QThread):
             err_info = sys.exc_info()
             self.error_signal.emit(err_info)
 
-# Toegevoegd Svasek 04/10/18 - Importeren van Hares output
+
 class ImportHaresFilesThread(QtCore.QThread):
     """
     Thread for importing Hares output files
@@ -319,6 +321,7 @@ class GenerateSwanFilesThread(QtCore.QThread):
             err_info = sys.exc_info()
             self.error_signal.emit(err_info)
 
+
 class GeneratePharosFilesThread(QtCore.QThread):
     """
     Thread for generating swan input files. The run method executes the
@@ -365,6 +368,7 @@ class GeneratePharosFilesThread(QtCore.QThread):
             self.update_progress_signal.emit(0)
             err_info = sys.exc_info()
             self.error_signal.emit(err_info)
+
 
 class UpdateTilesThread(QtCore.QThread):
     """

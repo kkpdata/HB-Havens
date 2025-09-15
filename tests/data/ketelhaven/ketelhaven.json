@@ -2,8 +2,8 @@
   "project": {
     "software": {
       "name": "HB Havens",
-      "version": "2.0",
-      "date": "september 2019"
+      "version": "25.1.1",
+      "date": "Augustus 2025"
     },
     "name": "ketelhaven",
     "user": {
@@ -11,27 +11,19 @@
       "email": "benit@hkv.nl"
     },
     "created": {
-      "date": "29-Aug-2023",
-      "time": "12:15:28"
+      "date": "11-Sep-2025",
+      "time": "09:56:45"
     },
     "last_modified": {
-      "date": "28-Sep-2023",
-      "time": "10:31:37"
+      "date": "11-Sep-2025",
+      "time": "09:56:50"
     },
-    "progress": 7
+    "progress": 0
   },
   "schematisation": {
     "harbor_area_shape": "tests\\data\\ketelhaven\\shapes\\haventerrein.shp",
     "breakwater_shape": "tests\\data\\ketelhaven\\shapes\\havendam.shp",
-    "entrance_coordinate": "",
-    "flooddefence_ids": [
-      "8-4"
-    ],
-    "fd_snap_distance": 10,
-    "representative_bedlevel": -5.0,
-    "support_location_name": "KM_2_8-4_dk_00062",
-    "result_locations_shape": "tests\\data\\ketelhaven\\shapes\\uitvoerlocaties.shp",
-    "breakwater": {
+    "breakwater_properties": {
       "height": [
         1.0,
         0.0
@@ -44,7 +36,15 @@
         0.4,
         0.4
       ]
-    }
+    },
+    "entrance_coordinate": "",
+    "flooddefence_ids": [
+      "8-4"
+    ],
+    "fd_snap_distance": 10,
+    "representative_bedlevel": -5.0,
+    "support_location_name": "KM_2_8-4_dk_00062",
+    "result_locations_shape": "tests\\data\\ketelhaven\\shapes\\uitvoerlocaties.shp"
   },
   "hydraulic_loads": {
     "HRD": "tests\\data\\ketelhaven\\databases\\WBI2017_IJsselmeer_8-4_v02_steunpunt.sqlite",
@@ -66,8 +66,7 @@
     "processes": [
       "Diffractie",
       "Transmissie",
-      "Lokale golfgroei",
-      "Golfbreking"
+      "Lokale golfgroei"
     ]
   },
   "swan": {
@@ -180,8 +179,10 @@
     "schematisations": {}
   },
   "export": {
+    "remove_original_HRD_loc": false,
     "export_HLCD_and_config": true,
-    "HLCD": "temp\\ketelhaven\\hlcd.sqlite",
+    "HRD": "",
+    "HLCD": "",
     "export_succeeded": true
   }
 }

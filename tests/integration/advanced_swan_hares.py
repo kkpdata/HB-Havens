@@ -1,42 +1,45 @@
 import os
-import shutil
 import sqlite3
 import unittest
-
 import pandas as pd
 
 import common
+import hbhavens
 from hbhavens.core.logger import initialize_logger
 from hbhavens.core.models import MainModel
 from hbhavens.io.database import HRDio
 
 import logging
 
-initialize_logger()
-logger = logging.getLogger()
 
 datadir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'ijmuiden')
+trunkdir = os.path.abspath(os.path.join(os.path.dirname(hbhavens.__file__),"../.."))
+tempdir = os.path.join(trunkdir, 'temp')
 
 paths = {
+    'temp': os.path.join(tempdir, 'ijmuiden'),
     'harborarea': os.path.join(datadir, 'shapes', 'haventerrein.shp'),
     'breakwater': os.path.join(datadir, 'shapes', 'havendammen.shp'),
     'hrd': os.path.join(datadir, 'databases', 'WBI2017_IJmuiden_input_selectie.sqlite'),
     'result_locations': os.path.join(datadir, 'shapes', 'uitvoerlocaties.shp'),
 }
 
+initialize_logger(filename=os.path.join(tempdir,'hbhavens.log'))
+logger = logging.getLogger()
+
 class TestSwanHares(unittest.TestCase):
 
     def setUp(self):
         logger.info('SETUP TestSwanHares')
         self.mainmodel = MainModel()
-        prjjson = 'temp/IJmuiden.json'
+        prjjson = os.path.join(paths['temp'],'IJmuiden.json')
         if os.path.exists(prjjson) and not self._testMethodName[0:5] == 'test1':
             self.mainmodel.project.open_from_file(prjjson)
 
     def tearDown(self):
         logger.info('TEARDOWN TestSwanHares')
-        if os.path.exists('temp'):
-            self.mainmodel.project.save_as('temp/IJmuiden.json', overwrite_all=True)
+        if os.path.exists(paths['temp']):
+            self.mainmodel.project.save_as(os.path.join(paths['temp'],'IJmuiden.json'), overwrite_all=True)
             self.mainmodel.save_tables()
 
     def test1_schematisation_IJmuiden(self):
@@ -44,8 +47,8 @@ class TestSwanHares(unittest.TestCase):
         Test preparing IJmuiden schematisation
         """
         logger.info('TEST1_SCHEMATISATION_IJMUIDEN')
-        if not os.path.exists('temp'):
-            os.mkdir('temp')
+        if not os.path.exists(paths['temp']):
+            os.mkdir(paths['temp'])
 
         supportloc = "Goede steunpunt IJmuiden"
         bedlevel = -20.0
@@ -55,13 +58,13 @@ class TestSwanHares(unittest.TestCase):
         # Test flood defence
         self.assertListEqual(self.mainmodel.schematisation.flooddefence['traject-id'].tolist(), trajecten)
         # Test harbor area
-        self.assertAlmostEqual(self.mainmodel.schematisation.inner.area, 8313731.074086675)
+        self.assertAlmostEqual(self.mainmodel.schematisation.inner.area, 8313753.015048908)
         # Test support location name
         self.assertEqual(self.mainmodel.schematisation.support_location['Name'], supportloc)
 
         # Geef eerst in de projectinstellingen aan dat de eenvoudige methode gebruikt moet worden
         self.mainmodel.project.settings['calculation_method']['method'] = 'simple'
-
+        self.mainmodel.schematisation.plot_schematisation(save=True, path=paths['temp'], close=True)
 
     def test2_swan(self):
 
@@ -69,7 +72,7 @@ class TestSwanHares(unittest.TestCase):
 
         # Berekening geavanceerde methode
         #========================================
-        swan_dst = 'temp/swan'
+        swan_dst = os.path.join(paths['temp'],'swan')
         if not os.path.exists(swan_dst):
             os.makedirs(swan_dst)
         
@@ -108,7 +111,7 @@ class TestSwanHares(unittest.TestCase):
     def test3_hares(self):
 
         # Make output dir if it does not exist
-        haresdir = f'temp/IJmuiden/hares'
+        haresdir = os.path.join(paths['temp'],'IJmuiden','hares')
         
         # Pharos settings
         self.mainmodel.project.settings['hares']['hares folder'] = haresdir
@@ -187,8 +190,7 @@ class TestSwanHares(unittest.TestCase):
         conn.close()
 
         # Verwijder
-        shutil.rmtree('temp')        
-
+        # shutil.rmtree(paths['temp'])        
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

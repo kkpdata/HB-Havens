@@ -2,51 +2,55 @@ import os
 import shutil
 import unittest
 
-from hbhavens.core.models import MainModel
-
+import hbhavens
 import logging
-from hbhavens.core.logger import initialize_logger
-
 import common
 
-initialize_logger()
-logger = logging.getLogger()
+from hbhavens.core.models import MainModel
+from hbhavens.core.logger import initialize_logger
+
 
 datadir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'heliushaven')
+trunkdir = os.path.abspath(os.path.join(os.path.dirname(hbhavens.__file__),"../.."))
+tempdir = os.path.join(trunkdir, 'temp')
 
-paths = {
+paths = {   
+    'temp': os.path.join(tempdir, 'heliushaven'),
     'harborarea': os.path.join(datadir, 'shapes', 'haventerrein.shp'),
     'breakwater': os.path.join(datadir, 'shapes', 'havendammen.shp'),
-    'result_locations_save': os.path.join(datadir, 'shapes', 'uitvoerlocaties.shp'),
+    'result_locations': os.path.join(datadir, 'shapes', 'uitvoerlocaties.shp'),
     'hrd': os.path.join(datadir, 'databases', 'steunpunt_heliushaven.sqlite')
 }
+initialize_logger(filename=os.path.join(tempdir,'hbhavens.log'))
+logger = logging.getLogger()
 
 class TestAdvancedZoetSwanRecalculate(unittest.TestCase):
 
     def setUp(self):
         logger.info('SETUP TestAdvancedZoetSwanRecalculate')
         self.mainmodel = MainModel()
-        prjjson = 'temp/heliushaven.json'
+        prjjson = os.path.join(paths['temp'],'heliushaven.json')
         if os.path.exists(prjjson) and not self._testMethodName[0:5] == 'test1':
             self.mainmodel.project.open_from_file(prjjson)
 
     def tearDown(self):
         logger.info('TEARDOWN TestAdvancedZoetSwanRecalculate')
-        if os.path.exists('temp'):
-            self.mainmodel.project.save_as('temp/heliushaven.json', overwrite_all=True)
+        if os.path.exists(paths['temp']):
+            self.mainmodel.project.save_as(os.path.join(paths['temp'],'heliushaven.json'), overwrite_all=True)
             self.mainmodel.save_tables()
 
     def test1_swan(self):
         # If the directory already exists, remove it.
-        if os.path.exists('temp'):
-            shutil.rmtree('temp')
-        os.mkdir('temp')
+        if os.path.exists(paths['temp']):
+            shutil.rmtree(paths['temp'])
+        os.mkdir(paths['temp'])
 
         supportloc = "HV_1_20-4_dk_00087"
         bedlevel = -10.0
         trajecten = ['20-4']
 
         common.add_schematisation(self.mainmodel, paths=paths, supportlocationname=supportloc, trajecten=trajecten, bedlevel=bedlevel)
+        self.mainmodel.schematisation.plot_schematisation(save=True,path=paths['temp'], close=True)
 
         # test2_recalculate_water_levels
         common.randomize_table(self.mainmodel.hydraulic_loads)
@@ -126,38 +130,42 @@ class TestAdvancedZoetSwanRecalculate(unittest.TestCase):
         common.export_to_database(self.mainmodel, tmp_paths, export_hlcd_config=False)
 
         # Verwijder
-        shutil.rmtree('temp')
+        # shutil.rmtree(paths['temp'])
 
 class TestAdvancedZoetSwanPharosRecalculate(unittest.TestCase):
 
     def setUp(self):
         logger.info('SETUP TestAdvancedZoetSwanPharosRecalculate')
         self.mainmodel = MainModel()
-        prjjson = 'temp/Heliushaven.json'
+        prjjson = os.path.join(paths['temp'],'heliushaven.json')
         if os.path.exists(prjjson):
             self.mainmodel.project.open_from_file(prjjson)
 
     def tearDown(self):
         logger.info('TEARDOWN TestAdvancedZoetSwanPharosRecalculate')
-        if os.path.exists('temp'):
-            self.mainmodel.project.save_as('temp/Heliushaven.json', overwrite_all=True)
+        if os.path.exists(paths['temp']):
+            self.mainmodel.project.save_as(os.path.join(paths['temp'],'heliushaven.json'), overwrite_all=True)
             self.mainmodel.save_tables()
 
     def test2_swan_pharos(self):
         # If the directory already exists, remove it.
-        if os.path.exists('temp'):
-            shutil.rmtree('temp')
-        os.mkdir('temp')
+        if os.path.exists(paths['temp']):
+            shutil.rmtree(paths['temp'])
+        os.mkdir(paths['temp'])
 
         supportloc = "HV_1_20-4_dk_00087"
         bedlevel = -10.0
         trajecten = ['20-4']
 
         common.add_schematisation(self.mainmodel, paths=paths, supportlocationname=supportloc, trajecten=trajecten, bedlevel=bedlevel)
+        self.mainmodel.schematisation.plot_schematisation(save=True,path=paths['temp'], close=True)
 
         # test2_recalculate_water_levels
         common.randomize_table(self.mainmodel.hydraulic_loads)
-        self.mainmodel.hydraulic_loads.detect_waterlevel_breaks()
+        if not self.mainmodel.project.settings['hydraulic_loads']['recalculate_waterlevels']: # avoid repeated calculation of water
+            self.mainmodel.project.settings['hydraulic_loads']['recalculate_waterlevels'] = True
+            self.mainmodel.hydraulic_loads.detect_waterlevel_breaks()
+            self.mainmodel.hydraulic_loads.calculate_waveconditions()
         # Test breaks
         self.assertListEqual(
             self.mainmodel.project.settings['hydraulic_loads']['waterlevels'],
@@ -166,7 +174,6 @@ class TestAdvancedZoetSwanPharosRecalculate(unittest.TestCase):
 
         # test3_recalculate_wave_conditions
         # Recalculate and adapt
-        self.mainmodel.hydraulic_loads.calculate_waveconditions()
         # Shuffle recalculated loads
         common.randomize_table(self.mainmodel.hydraulic_loads.recalculated_loads)
         common.randomize_table(self.mainmodel.schematisation.result_locations)
@@ -239,37 +246,39 @@ class TestAdvancedZoetSwanPharosRecalculate(unittest.TestCase):
         common.export_to_database(self.mainmodel, tmp_paths, export_hlcd_config=False)
 
         # Verwijder
-        shutil.rmtree('temp')
+        # shutil.rmtree(paths['temp'])
 
 class TestAdvancedZoetSwanHaresRecalculate(unittest.TestCase):
 
     def setUp(self):
         logger.info('SETUP TestAdvancedZoetSwanHaresRecalculate')
         self.mainmodel = MainModel()
-        prjjson = 'temp/Heliushaven.json'
+        prjjson = os.path.join(paths['temp'],'heliushaven.json')
         if os.path.exists(prjjson):
             self.mainmodel.project.open_from_file(prjjson)
 
     def tearDown(self):
         logger.info('TEARDOWN TestAdvancedZoetSwanHaresRecalculate')
-        if os.path.exists('temp'):
-            self.mainmodel.project.save_as('temp/Heliushaven.json', overwrite_all=True)
+        if os.path.exists(paths['temp']):
+            self.mainmodel.project.save_as(os.path.join(paths['temp'],'heliushaven.json'), overwrite_all=True)
             self.mainmodel.save_tables()
 
     def test3_swan_hares(self):
         # If the directory already exists, remove it.
-        if os.path.exists('temp'):
-            shutil.rmtree('temp')
-        os.mkdir('temp')
+        if os.path.exists(paths['temp']):
+            shutil.rmtree(paths['temp'])
+        os.mkdir(paths['temp'])
 
         supportloc = "HV_1_20-4_dk_00087"
         bedlevel = -10.0
         trajecten = ['20-4']
 
         common.add_schematisation(self.mainmodel, paths=paths, supportlocationname=supportloc, trajecten=trajecten, bedlevel=bedlevel)
+        self.mainmodel.schematisation.plot_schematisation(save=True,path=paths['temp'], close=True)
 
         # test2_recalculate_water_levels
         common.randomize_table(self.mainmodel.hydraulic_loads)
+        self.mainmodel.project.settings['hydraulic_loads']['recalculate_waterlevels'] = True
         self.mainmodel.hydraulic_loads.detect_waterlevel_breaks()
         # Test breaks
         self.assertListEqual(
@@ -352,7 +361,7 @@ class TestAdvancedZoetSwanHaresRecalculate(unittest.TestCase):
         common.export_to_database(self.mainmodel, tmp_paths, export_hlcd_config=False)
 
         # Verwijder
-        shutil.rmtree('temp')
+        # shutil.rmtree(paths['temp'])        
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

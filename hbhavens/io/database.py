@@ -19,7 +19,6 @@ from hbhavens.core import datamodels
 
 logger = logging.getLogger(__name__)
 
-
 inputvariableids = {
     1  : "Discharge Lobith",
     2  : "Discharge Lith",
@@ -53,7 +52,7 @@ intputvarabr = {
     "Wind speed": 'U={:02.0f}',
     "Water level": 'h={:03.1f}',
     "Sea water level": 'M={:04.2f}',
-    "Storm surge duration": 'D={:03.0f}',
+    "Storm surge duration": 'd={:03.0f}',
     "Time shift surge and tide": 'P={:03.0f}',
     "Wind direction": 'D={:05.1f}',
     "ClosingSituationId": 'K={:02d}',
@@ -263,32 +262,36 @@ class HRDio:
         remove_ids = []
         sql = f'SELECT HRDLocationId, Name, XCoordinate, YCoordinate FROM HRDLocations;'
         locations = self.conn.execute(sql)
-        for locid, name, x, y in locations:
-            if polygon.intersects(Point(x, y)):
-                if name in exemption:
-                    logger.warning('The support location is in the harbor bounds, but will not be removed.')
-                    continue
-                remove_ids.append(locid)
-        remove_id_str = ','.join(map(str, remove_ids))
+        if polygon == None: # remove all
+            remove_ids = [locid for (locid,name,_,_) in locations if name not in exemption]
+        else:
+            for locid, name, x, y in locations:
+                if polygon.intersects(Point(x, y)):
+                    if name in exemption:
+                        logger.warning(f'Location {name} is in the harbor bounds, but will not be removed as it was specified as an exemption.')
+                        continue
+                    remove_ids.append(locid)
         
-        if self.dbformat == 'WBI2017':
-            # Collect HydroDynamicDataIds
-            sql = f'SELECT HydroDynamicDataId FROM HydroDynamicData WHERE HRDLocationId IN ({remove_id_str});'
-            data_ids = self.conn.execute(sql).fetchall()
-            data_id_str = ','.join(str(i[0]) for i in data_ids)
+        if len(remove_ids) > 0:
+            remove_id_str = ','.join(map(str, remove_ids))
+            if self.dbformat == 'WBI2017':
+                # Collect HydroDynamicDataIds
+                sql = f'SELECT HydroDynamicDataId FROM HydroDynamicData WHERE HRDLocationId IN ({remove_id_str});'
+                data_ids = self.conn.execute(sql).fetchall()
+                data_id_str = ','.join(str(i[0]) for i in data_ids)
 
-            # Delete from HRDLocations and UncertaintyModelFactor
-            for table in ['HRDLocations', 'UncertaintyModelFactor']:
-                self.conn.execute(f'DELETE FROM {table} WHERE HRDLocationId IN ({remove_id_str});')
+                # Delete from HRDLocations and UncertaintyModelFactor
+                for table in ['HRDLocations', 'UncertaintyModelFactor']:
+                    self.conn.execute(f'DELETE FROM {table} WHERE HRDLocationId IN ({remove_id_str});')
 
-            # Delete from HydroDynamicData, HydroDynamicInputData and HydroDynamicResultData
-            for table in ['HydroDynamicData', 'HydroDynamicInputData', 'HydroDynamicResultData']:
-                self.conn.execute(f'DELETE FROM {table} WHERE HydroDynamicDataId IN ({data_id_str});')
+                # Delete from HydroDynamicData, HydroDynamicInputData and HydroDynamicResultData
+                for table in ['HydroDynamicData', 'HydroDynamicInputData', 'HydroDynamicResultData']:
+                    self.conn.execute(f'DELETE FROM {table} WHERE HydroDynamicDataId IN ({data_id_str});')
 
-        if self.dbformat == 'OS2023':
-            # Delete from HRDLocations, UncertaintyModelFactor and HydroDynamicResultData
-            for table in ['HRDLocations', 'UncertaintyModelFactor', 'HydroDynamicResultData']:
-                self.conn.execute(f'DELETE FROM {table} WHERE HRDLocationId IN ({remove_id_str});')
+            if self.dbformat == 'OS2023':
+                # Delete from HRDLocations, UncertaintyModelFactor and HydroDynamicResultData
+                for table in ['HRDLocations', 'UncertaintyModelFactor', 'HydroDynamicResultData']:
+                    self.conn.execute(f'DELETE FROM {table} WHERE HRDLocationId IN ({remove_id_str});')
 
         self.conn.commit()
         self._close()
@@ -717,8 +720,6 @@ class HRDio:
 
         return count
 
-
-
 class HLCDio:
 
     def __init__(self, path):
@@ -884,7 +885,24 @@ class HLCDio:
 
         return interpolation_support_id
         
-       
+    def set_track_hrdfilename(self, trackid, hrdname):
+        self._connect()
+        # check if trackid exists in table
+        sql = f'SELECT COUNT(*) FROM Tracks WHERE TrackId={trackid};'
+        count = self.conn.execute(sql).fetchone()[0]
+
+        if count == 1: # replace database name
+            sql = f'UPDATE Tracks SET HRDFileName = ? WHERE TrackId = ?;'
+            self.conn.execute(sql, (hrdname,trackid))
+            self.conn.commit()
+            self.conn.close()
+        elif count == 0: # add trackid and database
+            sql = f'INSERT INTO Tracks VALUES(?, ?, ?, ?);'
+            self.conn.execute(sql, (trackid,str(trackid)[0:2],'dummy',hrdname,))
+            self.conn.commit()
+            self.conn.close()
+        else:
+            raise KeyError('TrackId not unique in HLCD')
 
 class Configio:
 
@@ -972,3 +990,10 @@ class Configio:
         self.conn.commit()
 
         self._close()
+
+    def set_hrdfilename(self, hrdname):
+        self._connect()
+        
+        self.conn.execute(f'UPDATE General SET HRDName = ("{hrdname}");')
+        self.conn.commit()
+        self.conn.close()

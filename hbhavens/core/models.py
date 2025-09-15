@@ -15,6 +15,7 @@ import shutil
 import sys
 import time
 from itertools import product, chain
+from datetime import datetime
 
 import geopandas as gpd
 import matplotlib.pyplot as plt
@@ -23,8 +24,8 @@ import pandas as pd
 from shapely.plotting import patch_from_polygon as PolygonPatch
 from scipy.interpolate import interp2d, interp1d
 from shapely.geometry import (
-    LineString, MultiLineString, MultiPolygon, Point, Polygon)
-from shapely.ops import linemerge, polygonize, unary_union
+    LineString, MultiLineString, MultiPolygon, Point, Polygon, MultiPoint)
+from shapely.ops import linemerge, polygonize, unary_union, split
 from shapely.prepared import prep as _prep
 
 import warnings
@@ -42,8 +43,8 @@ from hbhavens.core.swan import Swan
 
 logger = logging.getLogger(__name__)
 
-__version__ = "23.1.1"
-__date__ = "september 2023"
+__version__ = "25.1.1"
+__date__ = "Augustus 2025"
 
 class MainModel:
     """
@@ -88,7 +89,7 @@ class MainModel:
         """
         Load project from dictionary (json)
         """
-        logger.info('Loading project from file...')
+        logger.info('Loading project from file')
         harbor_settings = self.project.settings['schematisation']
         database_settings = self.project.settings['hydraulic_loads']
         simple_settings = self.project.settings['simple']
@@ -100,25 +101,25 @@ class MainModel:
             for sectionid in harbor_settings['flooddefence_ids']:
                 self.schematisation.add_flooddefence(sectionid)
         else:
-            logger.info('..Did not load any dike sections')
+            logger.info('Did not load any dike sections')
 
         if harbor_settings['harbor_area_shape']:
             self.schematisation.add_harborarea(harbor_settings['harbor_area_shape'])
-            logger.info('..Loaded harbor area')
+            logger.info('Loaded harbor area')
         else:
-            logger.info('..Did not load harbor area')
+            logger.info('Did not load harbor area')
 
         if harbor_settings['breakwater_shape']:
             self.schematisation.add_breakwater(harbor_settings['breakwater_shape'])
-            logger.info('..Loaded break waters')
+            logger.info('Loaded break waters')
 
             if len(self.schematisation.breakwaters) == 2:
                 self.schematisation.generate_harbor_bound()
-                logger.info('..Generated harbor bound for two breakwaters.')
+                logger.info('Generated harbor bound for two breakwaters.')
             elif harbor_settings['entrance_coordinate']:
-                self.schematisation.entrance = tuple(harbor_settings['entrance_coordinate'])
+                self.schematisation.entrance_coordinate = tuple(harbor_settings['entrance_coordinate'])
                 self.schematisation.generate_harbor_bound()
-                logger.info('..Generated harbor bound for single breakwater and entrance coordinate.')
+                logger.info('Generated harbor bound for single breakwater and entrance coordinate.')
             else:
                 logger.warning(f'No entrance coordinate given: {harbor_settings["entrance_coordinate"]}, did not generate harbor bound.')
         else:
@@ -161,7 +162,6 @@ class MainModel:
             # print('Loaded pharos calculation results')
         self.pharos.load_from_project()
 
-            # Toegevoegd Svasek 04/10/18 - Laden van Hares class
             # print('Loaded hares calculation results')
         self.hares.load_from_project()
 
@@ -170,10 +170,12 @@ class MainModel:
 
         # Load exportmodel
         self.export.load_table()
+        if export_settings['HRD']:
+            self.export.add_HRD(export_settings['HRD'])
         if export_settings['HLCD']:
             self.export.add_HLCD(export_settings['HLCD'])
 
-        logger.info('Finished loading!\n')
+        logger.info('Finished loading!')
 
     def save_tables(self):
         """
@@ -188,8 +190,6 @@ class MainModel:
                 self.simple_calculation.save_results()
 
         # Advanced calculation
-        # if self.project.settings['calculation_method']['method'] == 'advanced':
-            # print('Saving swan tables')
         self.swan.save_tables()
         self.pharos.save_tables()
         self.hares.save_tables()
@@ -757,7 +757,7 @@ class ModelUncertainties:
         if 'Storage situation VZM' in unccols:
             unccols.remove('Storage situation VZM')
         # Add water level in case recalculated
-        if self.mainmodel.project.settings['hydraulic_loads']['recalculate_waterlevels']:
+        if self.mainmodel.project.settings['hydraulic_loads']['recalculate_waterlevels'] and not 'h' in unccols:
             unccols.insert(0, 'h')
 
         del self.variable_columns[:]
@@ -873,7 +873,7 @@ class Export:
         self.hydraulic_loads = mainmodel.hydraulic_loads
         self.settings = mainmodel.project.settings
 
-        self.dfcolumns = ['Naam', 'Exportnaam', 'SQLite-database', '...']
+        self.dfcolumns = ['Naam', 'Exportnaam']
         self.export_dataframe = pd.DataFrame(columns=self.dfcolumns)
 
         self.hrd_connections = []
@@ -881,7 +881,6 @@ class Export:
         self.config_connections = []
 
         self.resulttable = io.database.ExportResultTable(self.mainmodel)
-
 
     def add_result_locations(self):
         # Drop all content
@@ -907,7 +906,16 @@ class Export:
         self.HLCDpath = path
         self.settings['export']['HLCD'] = path
 
-    def remove_locations_from_dbs(self):
+    def add_HRD(self, path):
+        """
+        Add HRD-database for modification
+        """
+
+        # Read database
+        self.HRDpath = path
+        self.settings['export']['HRD'] = path
+
+    def remove_locations_from_dbs(self,remove_original_HRD_loc):
         """
         Method to remove locations from hrd and hlcd.
         """
@@ -915,7 +923,10 @@ class Export:
         #-------------------------------------------------------------
         hrd_remove_ids = []
         for hrd in self.hrd_connections:
-            hrd_remove_ids.extend(hrd.remove_locations(self.mainmodel.schematisation.inner, exemption=[self.mainmodel.schematisation.support_location['Name']]))
+            if remove_original_HRD_loc:
+                hrd_remove_ids.extend(hrd.remove_locations(None, exemption=[self.mainmodel.schematisation.support_location['Name']]))
+            else:
+                hrd_remove_ids.extend(hrd.remove_locations(self.mainmodel.schematisation.inner, exemption=[self.mainmodel.schematisation.support_location['Name']]))
 
         if not self.settings['export']['export_HLCD_and_config'] or not any(hrd_remove_ids):
             return None
@@ -931,13 +942,14 @@ class Export:
         for config in self.config_connections:
             config.remove_locations(hlcd_remove_ids)
 
-
     def _check_paths(self):
         """
         Check if all paths exist
         """
         export_settings = self.settings['export']
 
+        if export_settings['HRD'] == '':
+            raise OSError('Geen HRD opgegeven.')
         if export_settings['export_HLCD_and_config']:
             if export_settings['HLCD'] == '':
                 raise OSError('Geen HLCD opgegeven.')
@@ -945,11 +957,11 @@ class Export:
                 raise OSError('Path not found: "{}"'.format(export_settings['HLCD']))
 
         # Collect all paths
-        paths = [export_settings['HLCD']] if export_settings['export_HLCD_and_config'] else []
-        for path in self.export_dataframe['SQLite-database'].dropna(how='any').unique():
-            paths.append(path)
-            if export_settings['export_HLCD_and_config']:
-                paths.append(path.replace('.sqlite', '.config.sqlite'))
+        paths = [export_settings['HRD']]
+        # for path in self.export_dataframe['SQLite-database'].dropna(how='any').unique():
+        if export_settings['export_HLCD_and_config']:
+            paths.append(export_settings['HLCD'])
+            paths.append(export_settings['HRD'].replace('.sqlite', '.config.sqlite'))
 
         # Check if all paths exist:
         for path in paths:
@@ -965,16 +977,18 @@ class Export:
 
         # Add export name (Exportnaam)
         result_locations = result_locations.merge(
-            self.export_dataframe.dropna(subset=['SQLite-database'])[['Naam', 'Exportnaam']], on='Naam', how='inner')
+            self.export_dataframe[['Naam', 'Exportnaam']], on='Naam', how='inner')
 
         # Get system id
         systemid = self.hrd_connections[0].get_system_id()
 
         # Get track id
         for hrd in self.hrd_connections:
+
             # Get names in database
-            names = self.export_dataframe.loc[self.export_dataframe['SQLite-database'].eq(hrd.path), 'Naam']
+            names = self.export_dataframe.loc[:,'Naam']
             hrdidx = result_locations['Naam'].isin(names)
+
             # Assign trackid
             trackid = hrd.get_track_id()
             result_locations.loc[hrdidx, 'TrackId'] = trackid
@@ -983,7 +997,7 @@ class Export:
         # Get maximum location id (in watersystem).
         for hrd in self.hrd_connections:
             # Get names in database
-            names = self.export_dataframe.loc[self.export_dataframe['SQLite-database'].eq(hrd.path), 'Naam']
+            names = self.export_dataframe.loc[:, 'Naam']
             hrdidx = result_locations['Naam'].isin(names)
 
             # If no HLCD is known, get the max location id from the database and append the new locations
@@ -1094,7 +1108,6 @@ class Export:
                 - Remove data from config database, if present
                 - Add data to config database, if present
 
-
         Parameters
         ----------
         databasepath : str
@@ -1111,22 +1124,22 @@ class Export:
         progress_function(5)
 
         # Create connections
-        for database in self.export_dataframe['SQLite-database'].unique():
-            self.hrd_connections.append(io.database.HRDio(database))
+        # for database in self.export_dataframe['SQLite-database'].unique():
+        self.hrd_connections.append(io.database.HRDio(self.settings['export']['HRD']))
 
         if self.settings['export']['export_HLCD_and_config']:
-            for database in self.export_dataframe['SQLite-database'].unique():
-                self.config_connections.append(io.database.Configio(database.replace('.sqlite' , '.config.sqlite')))
+            # for database in self.export_dataframe['SQLite-database'].unique():
+            self.config_connections.append(io.database.Configio(self.settings['export']['HRD'].replace('.sqlite' , '.config.sqlite')))
             self.hlcd_connection = io.database.HLCDio(self.settings['export']['HLCD'])
 
-        # Determine systemid's. If multiple, raise an error
-        if len(set([hrd.get_system_id() for hrd in self.hrd_connections])) > 1:
-            # Raise error for multiple systems
-            raise NotImplementedError((
-                'In de lijst van exportdatabases komen verschillende watersystemen '
-                f'(id\'s: "{", ".join(map(str, systemids))}" voor. Dit is niet toegestaan omdat niet alle '
-                'watersystemen eenzelfde opbouw van de database hebben. Voer de export apart uit voor elk watersysteem.'
-            ))
+        # # Determine systemid's. If multiple, raise an error
+        # if len(set([hrd.get_system_id() for hrd in self.hrd_connections])) > 1:
+        #     # Raise error for multiple systems
+        #     raise NotImplementedError((
+        #         'In de lijst van exportdatabases komen verschillende watersystemen '
+        #         f'(id\'s: "{", ".join(map(str, [hrd.get_system_id() for hrd in self.hrd_connections]))}" voor. Dit is niet toegestaan omdat niet alle '
+        #         'watersystemen eenzelfde opbouw van de database hebben. Voer de export apart uit voor elk watersysteem.'
+        #     ))
 
         # Create result location overview
         # Note that the location id's are determined before the locations are removed from hrd (and hlcd),
@@ -1135,7 +1148,7 @@ class Export:
         progress_function(5)
 
         # Remove present locations
-        self.remove_locations_from_dbs()
+        self.remove_locations_from_dbs(self.settings['export']['remove_original_HRD_loc'])
         progress_function(5)
 
         # Add locations to HLCD
@@ -1143,7 +1156,15 @@ class Export:
             self.hlcd_connection.add_locations(result_locations)
 
         progress_function(5)
-
+        
+		# update HLCD with new name of HRD database
+        if self.settings['export']['export_HLCD_and_config']:
+            database = self.settings['export']['HRD']
+            hrd = io.database.HRDio(database)
+            database = database.rsplit("\\", 1)[-1]
+            database = database.rsplit("/", 1)[-1]
+            self.hlcd_connection.set_track_hrdfilename(hrd.get_track_id(), database)
+        
         # Add results to resulttable
         self.get_results(result_locations)
         progress_function(15)
@@ -1153,10 +1174,10 @@ class Export:
         nhrds = len(self.hrd_connections)
         for i, hrd in enumerate(self.hrd_connections):
             # Get names of locations that need to be in database
-            names = self.export_dataframe.loc[self.export_dataframe['SQLite-database'].eq(hrd.path), 'Naam']
+            names = self.export_dataframe.loc[:, 'Naam']
 
-            if len(set(names)) != len(names):
-                raise ValueError('Niet alle locatienamen binnen de database zijn uniek.')
+            # if len(set(names)) != len(names):
+            #     raise ValueError('Niet alle locatienamen binnen de database zijn uniek.')
 
             # Select the part of the result locations in the group
             group_location = result_locations.loc[result_locations['Naam'].isin(names), :]
@@ -1193,6 +1214,7 @@ class Export:
                 # Add calculation settings
                 #-------------------------------------------------------------
                 self.config_connections[i].add_numerical_settings(group_location)
+                self.config_connections[i].set_hrdfilename(os.path.basename(self.settings['export']['HRD']))
             progress_function(10/nhrds)
 
         del self.hrd_connections[:]
@@ -1207,7 +1229,7 @@ class Export:
 
     def load_table(self):
         """
-        Save table to file
+        Load table from file
         """
         path = os.path.join(self.mainmodel.project.filedir, 'export_table.pkl')
         if os.path.exists(path):
@@ -1216,7 +1238,7 @@ class Export:
             if not self.export_dataframe.empty:
                 self.export_dataframe.drop(self.export_dataframe.index, inplace=True)
             # Add new content
-            for col in imported_df.columns:
+            for col in self.export_dataframe.columns:
                 self.export_dataframe[col] = imported_df[col]
 
 class HarborSchematisation:
@@ -1237,8 +1259,9 @@ class HarborSchematisation:
         self.flooddefence = datamodels.ExtendedGeoDataFrame(geotype=LineString, required_columns=['traject-id', 'geometry'])
         self.inner = None
         self.buffered_inner = None
-        self.entrance = None
         self.area_union = None
+        self.entrance_coordinate = None
+        self.entrance = None
         self.bedlevel = None
 
         self.support_locations = datamodels.ExtendedGeoDataFrame(geotype=Point, required_columns=['HRDLocationId', 'Name', 'XCoordinate', 'YCoordinate', 'geometry'])
@@ -1256,21 +1279,31 @@ class HarborSchematisation:
         Prerequisite is that the harbor area is loaded, since this is used to
         determine which end of the breakwater is the head.
         """
-        if not np.size(self.harborarea):
-            raise AttributeError('Harbor area is not loaded. Add this first, since it is used to determine the location of the head(s) of the breakwater(s).')
-        if self.flooddefence.empty:
-            raise AttributeError('Flood defence is not loaded. Add this first.')
+
+        # Set simple method on 'not finished'
+        self.settings['simple']['finished'] = False
+
+        for naam, element in zip(
+            ['Haventerrein', 'Waterkering',],
+            [self.harborarea, self.flooddefence,]
+        ):
+            if not np.size(element):
+                raise AttributeError('{} is niet aanwezig. Deze moet aanwezig zijn voordat de uitvoerlocaties toegevoegd kunnen worden.'.format(naam))
+
+        # Remove entrance coordinate
+        self.del_entrance_coordinate()
+
         # Read file
         self.breakwaters.read_file(path)
 
-        # Check if one breakwater end crosses the harbor area
+        # Check if one breakwater end crosses the harbor area 
         for idx, row in self.breakwaters.iterrows():
-            ncrosses = [self.harborarea.contains(Point(row.geometry.coords[i])).any() for i in [0, -1]]
-            if sum(ncrosses) == 0:
+            ncrosses = sum([self.harborarea.contains(Point(row.geometry.coords[i])).any() for i in [0, -1]])
+            if ncrosses == 0: # no intersection between breakwater and harbourarea
                 raise ValueError('Een of meer van de havendammen kruist het haventerrein niet; zorg dat één uiteinde het haventerrein kruist.')
-            elif sum(ncrosses) == 2:
+            elif ncrosses > 1: # mulitple intersections between breakwater and harbourarea
                 raise ValueError('Voor één of meer van de havendammen kruisen beide uiteinden het haventerrein; zorg dat één uiteinde het haventerrein kruist.')
-
+        
         # Determine for all breakwaters the head location
         # these are determined as the point futhest away from the harbor area
         self.breakwaters['breakwaterhead'] = [Point(0, 0)] * len(self.breakwaters)
@@ -1281,12 +1314,28 @@ class HarborSchematisation:
             self.breakwaters.at[idx, 'breakwaterhead'] = Point(row.geometry.coords[max(dists, key=dists.get)])
             self.breakwaters.at[idx, 'headindex'] = max(dists, key=dists.get)
 
-        # We now have enough geometries to generate the harbor bounds, if there
-        # are two breakwaters
+        # Golfbreker afknippen boven haventerrein voor de visualisatie
+        for idx, row in self.breakwaters.iterrows():
+            # select part that contains head
+            difference = row.geometry.difference(self.area_union)
+            if difference.geom_type == 'LineString':
+                self.breakwaters.geometry.iloc[idx] = difference
+            elif difference.geom_type == 'MultiLineString':
+                for line in difference.geoms:
+                    if line.buffer(0.01).contains(row.breakwaterhead):
+                        self.breakwaters.geometry.iloc[idx] = line
+
+        # Golfbreker afknippen boven normtraject voor de visualisatie
+        for idx, row in self.breakwaters.iterrows():
+            if row.geometry.crosses(self.flooddefence.geometry).any():
+                for _, fd in self.flooddefence.loc[row.geometry.crosses(self.flooddefence.geometry)].iterrows():
+                    difference = split(row.geometry,fd.geometry)
+                    self.breakwaters.geometry.iloc[idx] = [i for i in difference.geoms if i.buffer(0.01).contains(row.breakwaterhead)][0]
+
+        # We now have enough geometries to generate the harbor bounds, if there are two breakwaters
         if len(self.breakwaters) == 2:
             self.generate_harbor_bound()
-        # Set simple method on 'not finished'
-        self.settings['simple']['finished'] = False
+
         # Save path to project structure
         self.settings['schematisation']['breakwater_shape'] = path
 
@@ -1303,35 +1352,27 @@ class HarborSchematisation:
         """
         Add harbor area geometry to schematisation
         """
-        # Check if flooddefence is chosen
-        if self.flooddefence.empty:
-            raise AttributeError('Er is nog geen normtraject toegevoegd.')
+
+        # Set simple method on 'not finished'
+        self.settings['simple']['finished'] = False
+
+        for naam, element in zip(
+            ['Waterkering',],
+            [self.flooddefence,]
+        ):
+            if not np.size(element):
+                raise AttributeError('{} is niet aanwezig. Deze moet aanwezig zijn voordat de uitvoerlocaties toegevoegd kunnen worden.'.format(naam))
 
         # Read file
         self.harborarea.read_file(path)
-
-        # # Check if the parts do not overlap
-        # if len(self.harborarea) > 1:
-        #     if not isinstance(_unary_union(self.harborarea['geometry'].tolist()), Polygon):
-        #         raise ValueError("""Verschillende onderdelen van het haventerrein
-        #                          vormen geen overlappend geheel. Zorg dat dit
-        #                          wel het geval is""")
-
-        # Check if all parts cross the flooddefence
-        # TODO: ZOEK EEN STABIELE OPLOSSING VOOR DE LOSSE HAVENELEMENTEN DIE WEL LOS MOGEN LIGGEN, MAAR
-        # DE GEOMETRIE NIET VERSTOREN
-        # for area in self.harborarea.itertuples():
-        #     if not self.flooddefence.intersects(area.geometry).any():
-        #         raise ValueError('Het haventerrein overlapt niet met de waterkering. Dit is een vereiste.')
 
         # Add prepared geometries
         self.harborarea['prepgeo'] = [_prep(area['geometry']) for _, area in self.harborarea.iterrows()]
 
         # Calculate union of harbor area
         self.area_union = unary_union(self.harborarea['geometry'].tolist())
-
-        # Set simple method on 'not finished'
-        self.settings['simple']['finished'] = False
+        self.inner = None
+        self.buffered_inner = None
 
         # Save path to project structure
         self.settings['schematisation']['harbor_area_shape'] = path
@@ -1340,11 +1381,17 @@ class HarborSchematisation:
         """
         Add flood defence geometry to schematisation
         """
+
+        # Set simple method on 'not finished'
+        self.settings['simple']['finished'] = False
+
         # Use default datadir if not given
         if datadir is None:
             datadir = self.mainmodel.datadir
 
         # Load geometry
+        if section_id[0] == '0':
+            section_id = section_id[1:]
         geometry = io.geometry.import_section_geometry(section_id, datadir)
         if not geometry:
             return None
@@ -1357,6 +1404,22 @@ class HarborSchematisation:
         logger.info(f'Adding flood defence section {section_id}')
         self.flooddefence.at[section_id, 'traject-id'] = section_id
         self.flooddefence.at[section_id, 'geometry'] = geometry
+
+    def del_breakwaters(self):
+        """
+        Remove breakwater geometry from schemetisation
+        """
+
+        self.del_entrance_coordinate()
+        self.breakwaters.drop(self.breakwaters.index, inplace=True)
+        self.inner = None
+        self.buffered_inner = None
+
+        # Remove entrance coordinate
+        # self.mainmodel.project.settings["schematisation"]["entrance_coordinate"] = ''
+
+        # Set simple method on 'not finished'
+        self.settings['simple']['finished'] = False
 
     def set_entrance_coordinate(self, crd):
         """
@@ -1372,11 +1435,10 @@ class HarborSchematisation:
         valid = self.check_entrance_coordinate(crd)
         if valid:
             self.mainmodel.project.settings["schematisation"]["entrance_coordinate"] = crd
-            self.entrance = crd
+            self.entrance_coordinate = crd
 
         # Set simple method on 'not finished'
         self.settings['simple']['finished'] = False
-
 
     def check_entrance_coordinate(self, crd):
         """
@@ -1407,6 +1469,17 @@ class HarborSchematisation:
 
         return valid
     
+    def del_entrance_coordinate(self):
+        """
+        Remove the entrance coordinate, in case of one breakwater
+        """
+
+        # self.mainmodel.project.settings["schematisation"]["entrance_coordinate"] = ''
+        self.entrance_coordinate = None
+
+        # Set simple method on 'not finished'
+        self.settings['simple']['finished'] = False
+
     def set_breakwater_heights(self, heights):
         """
         Set the breakwater heights and check if valid
@@ -1575,6 +1648,10 @@ class HarborSchematisation:
         loc : geopandas.GeoDataFrame
             dataframe with properties and geometry of support location
         """
+
+        # Set simple method on 'not finished'
+        self.settings['simple']['finished'] = False
+
         self.support_locations.delete_all()
         self.support_locations.set_data(loc)
 
@@ -1588,6 +1665,9 @@ class HarborSchematisation:
             path to shapefile with locations. Shapefile only needs a geometry,
             a name (column "Naam") is generated if not present.
         """
+
+        # Set simple method on 'not finished'
+        self.settings['simple']['finished'] = False
 
         for naam, element in zip(
             ['Haventerrein', 'Havendammen', 'Waterkering'],
@@ -1613,7 +1693,6 @@ class HarborSchematisation:
         logger.info('Trying to initialize pharos calculation')
         self.mainmodel.pharos.init_calculation_table()
 
-        # Toegevoegd Svasek 04/10/18 - Initialiseer de Hares tabel
         # Init hares table
         logger.info('Trying to initialize hares calculation')
         self.mainmodel.hares.init_calculation_table()
@@ -1621,7 +1700,6 @@ class HarborSchematisation:
         # Set simple method on 'not finished'
         self.settings['simple']['finished'] = False
         self.settings['schematisation']['result_locations_shape'] = path
-
 
     def set_selected_support_location(self, name):
         """
@@ -1662,7 +1740,6 @@ class HarborSchematisation:
         logger.info('Trying to initialize pharos calculation')
         self.mainmodel.pharos.init_calculation_table()
 
-        # Toegevoegd Svasek 04/10/18 - Initialiseer de Hares tabel
         logger.info('Trying to initialize hares calculation')
         self.mainmodel.hares.init_calculation_table()
 
@@ -1675,7 +1752,6 @@ class HarborSchematisation:
 
         # Change support location in settings
         self.settings['schematisation']['support_location_name'] = name
-
 
     def set_bedlevel(self, bedlevel):
         """
@@ -1773,8 +1849,9 @@ class HarborSchematisation:
         """
 
         # generate harbor entrance if it does not exist yet
-        if not np.size(self.entrance):
-            self.generate_harbor_bound()
+        if not self.inner:
+            raise AttributeError('Harbour area not generated. Add missing elements first.')
+            # self.generate_harbor_bound()
 
         # Generate a respresentative point within the harbor bound
         pt = self.inner.representative_point()
@@ -1784,7 +1861,7 @@ class HarborSchematisation:
         sections = []
         section_ids = []
 
-        # For each section the part along the harbor inner area needs to be found. For
+        # For each section, the part along the harbor inner area needs to be found. For
         # this the inner bound is slightly buffered, after which the intersection with
         # the flood defence is calculated. This is shortened by the buffer, to get the
         # original length again.
@@ -1822,7 +1899,7 @@ class HarborSchematisation:
             # First determine on which side of the section the points should be
             # generated
             #-------------------------------------------------------------
-            # Select nearest point of support point on flood defence lin
+            # Select nearest point of support point on flood defence line
             nearest = sectiongeo.project(pt)
             # Select a tiny linesegment
             linesegment = [sectiongeo.interpolate(nearest - 0.01).coords[0],
@@ -1953,59 +2030,56 @@ class HarborSchematisation:
 
         return gpd.GeoDataFrame.from_dict(pts, orient='index')
 
-
     def generate_harbor_bound(self):
         """
         Generates the interior line of the harbor.
-
+    
         For multiple purposes HB Havens needs to know what is inside and what
         is outside the harbor.
-
+    
         Steps to get the harbor inner area:
-            1.  Determine the harbor entrance. For a harbor with two break-
-                waters this is the line between the two breakwater heads. For a
-                harbor with one breakwater it is the line from the breakwater
-                head to the given entrance coordinate
-
-            2.  Create a line collection of the entrance, breakwater(s) and
-                the harbor area union exteriors.
-
+            1.  Determine the harbor entrance. 
+    
+            2.  Create a line collection of the entrance, breakwater(s), 
+                the harbor area union exteriors and flooddefence.
+    
             3.  Polygonize the line collection.
+    
+            4.  Clip by the flood defence line 
 
-            4.  Clip by the flood defence line
-
+            5.  Clip by entrance line 
         """
-
+    
         logger.info('Generating harbor bound')
         # 1.  Determine harbor entrance
-        # Generate line trough harbor entrance
+
         if len(self.breakwaters) == 2:
             pt1, pt2 = self.breakwaters['breakwaterhead'].tolist()
-
+    
         elif len(self.breakwaters) == 1:
             breakwater = self.breakwaters.iloc[0]
             # The first point is the breakwaterhead
             pt1 = breakwater['breakwaterhead']
             if not hasattr(self, 'entrance'):
                 raise ValueError('Extra entrance coordinate is not known.')
-            pt2 = self.entrance
-
+            pt2 = self.entrance_coordinate
+    
         # Create entrance as linestring
         self.entrance = LineString([pt1, pt2])
-
-        # Delete overlapping part with harborarea in case of 1 breakwater
+    
+        # Delete overlapping part with harbor area in case of 1 breakwater
         if len(self.breakwaters) == 1:
             self.entrance = self.entrance.difference(self.area_union)
-
-        # 2.  Merge lines.  The entrance is slightly buffered to force an
-        # intersection with the harbor area in case of one breakwater
-
+    
+        # 2.  Merge lines.  
+        # The entrance and breakwater(s) are slightly buffered to force an intersection with the harbor area
+    
         # get harbor area lines
         if isinstance(self.area_union, Polygon):
             area_exteriors = [self.area_union.exterior]
         elif isinstance(self.area_union, MultiPolygon):
             area_exteriors = [area.exterior for area in self.area_union.geoms]
-
+    
         # Get the snapped flood defence line
         # Convert to lists of linestrings
         flooddefencegeos = list(chain(*map(geometry.as_linestring_list, self.flooddefence['geometry'])))
@@ -2015,31 +2089,42 @@ class HarborSchematisation:
                 crds = np.vstack(geo.coords[:])
                 dists = [self.entrance.centroid.distance(Point(point)) for point in geo.coords]
                 flooddefencegeos[i] = geometry.as_linestring_list(geo.difference(Point(*crds[np.argmax(dists)]).buffer(1.0)))            
-
+    
         # Get coordinates
         flooddefencegeos = [np.vstack(line.coords[:]) for line in geometry.as_linestring_list(flooddefencegeos)]
             
         # Snap all lines
         snapped_fd_lines = [LineString(line) for line in geometry.snap_flooddefence_lines(
-            lines=flooddefencegeos, max_snap_dist=self.settings['schematisation']['fd_snap_distance'])]
-
-        lines = [self.entrance.buffer(0.01).exterior] + area_exteriors + self.breakwaters['geometry'].tolist() + snapped_fd_lines
-
+            lines=flooddefencegeos, max_snap_dist=self.settings['schematisation']['fd_snap_distance']
+            )]
+        lines = [self.entrance.buffer(0.01).exterior] + area_exteriors + self.breakwaters['geometry'].buffer(0.01).exterior.tolist() + snapped_fd_lines 
+    
         # 3.  Get inner polygon from lines
         polygons = [p for p in polygonize(unary_union(linemerge(lines)))]
-
         if len(polygons) == 0:
             raise ValueError('Polygonizing lines did not succeed, check your geometries.')
         polygon = unary_union(polygons)
-
-        # 4.  Clip the polygon with the flood defence line.
+    
         correct_side_pt = polygon.difference(self.area_union.buffer(0.1)).representative_point()
-
         lines = [poly.exterior for poly in geometry.multiple_polygons(polygon)] + snapped_fd_lines
         polygons = [p for p in polygonize(unary_union(linemerge(lines)))]
+    
+        # 4. Clip by flood defense line
+        clipped_by_fd = [p for p in polygons if p.intersects(correct_side_pt)][0]
+    
+        # 5. Clip by entrance line (avoid harborareas sticking through entrance)
+        entrance_line = self.entrance.buffer(0.01)  # Buffer the entrance line
 
-        self.inner = [polygon for polygon in polygons if polygon.intersects(correct_side_pt)][0]
-
+        # Snap entrance line (if needed, similar to the flood defense snapping)
+        snapped_entrance_lines = geometry.snap_flooddefence_lines([np.vstack(entrance_line.exterior.coords[:])], max_snap_dist=self.settings['schematisation']['fd_snap_distance'])
+    
+        # Clip by entrance line in the same way as flood defense
+        lines_for_entrance = [clipped_by_fd.exterior] + snapped_entrance_lines
+        polygons = [p for p in polygonize(unary_union(linemerge(lines_for_entrance)))]
+        
+        # The final clipped inner polygon
+        self.inner = [p for p in polygons if p.intersects(correct_side_pt)][0]
+        
         # Convert to other geometry types
         self.innerbound = LineString(self.inner.exterior.coords[:])
         self.innerpoly = _prep(Polygon(self.inner))
@@ -2070,7 +2155,7 @@ class HarborSchematisation:
 
         return not self.buffered_inner.intersects(line)
 
-    def plot_schematisation(self, buffer=200, locations=True, figsize=(15,15)):
+    def plot_schematisation(self, buffer=200, locations=True, figsize=(15,15), save=False, path='', close=False):
         """
         Method to plot the schematisation. Primarily used for testing
         and debugging purposes.
@@ -2080,45 +2165,111 @@ class HarborSchematisation:
         fig, ax = plt.subplots(figsize=figsize)
         ax.set_aspect(1.0)
 
-        # plot harbor area
-        ax.add_patch(PolygonPatch(self.inner, facecolor='0.90', edgecolor=None, zorder=1, alpha=0.5, label='Havenbassin'))
-        ax.add_patch(PolygonPatch(self.harborarea.geometry[0], facecolor='C0', edgecolor=None, zorder=2, alpha=0.5, label='Haven terrein'))
-        if len(self.harborarea.geometry) > 1:
-            for geom in self.harborarea.geometry[1:]:
-                ax.add_patch(PolygonPatch(geom, facecolor='C0', edgecolor=None, zorder=2, alpha=0.5))
+        # Plot elements in z-order matching mapwidget (1-8)
+        
+        # 2. inner (zorder=2) - only if harborarea exists and breakwaters meet conditions
+        if len(self.harborarea) != 0 and len(self.breakwaters) != 0:
+            if len(self.breakwaters) == 2 or hasattr(self, 'entrance'):
+                ax.add_patch(PolygonPatch(self.inner, facecolor='grey', alpha=0.3, zorder=2, label='binnengaats gebied'))
 
-        # Plot breakwaters. Add row id at head
-        for breakwater in self.breakwaters.itertuples():
-            if breakwater.Index == 0:
-                ax.plot(*breakwater.geometry.xy, color='C1', label='Golfbreker')
-            else:
-                ax.plot(*breakwater.geometry.xy, color='C1')
-            ax.text(*breakwater.breakwaterhead.coords[0], breakwater.Index)
-            ax.plot(*np.vstack(self.entrance.coords[:]).T, lw=1.5, color='0.1', dashes=(2,2), alpha=1.0)
+        # 3. harborarea (zorder=3)
+        if len(self.harborarea) != 0:
+            ax.add_patch(PolygonPatch(self.harborarea.geometry[0], facecolor='C0', alpha=0.4, edgecolor='C0', zorder=3, label='haventerrein'))
+            if len(self.harborarea.geometry) > 1:
+                for geom in self.harborarea.geometry[1:]:
+                    ax.add_patch(PolygonPatch(geom, facecolor='C0', alpha=0.4, edgecolor='C0', zorder=3))
 
-        # Set limits
+        # 4. breakwaters (zorder=4)
+        if len(self.breakwaters) != 0:
+            for i, breakwater in enumerate(self.breakwaters.itertuples()):
+                if i == 0:
+                    ax.plot(*breakwater.geometry.xy, color='C1', linewidth=2, alpha=1.0, zorder=4, label='havendam(men)')
+                else:
+                    ax.plot(*breakwater.geometry.xy, color='C1', linewidth=2, alpha=1.0, zorder=4)
+                ax.text(*breakwater.breakwaterhead.coords[0], breakwater.Index)
+
+        # 5. entrance (zorder=5) - only if breakwaters exist and conditions met
+        if len(self.breakwaters) != 0:
+            if len(self.breakwaters) == 2 or hasattr(self, 'entrance'):
+                ax.plot(*np.vstack(self.entrance.coords[:]).T, lw=1.5, color='0.1', dashes=(2,2), alpha=1.0, zorder=5, label='haveningang')
+
+        # Set limits (without flooddefence)
         xlim = ax.get_xlim()
-        ax.set_xlim(xmin=min(self.support_location.XCoordinate,xlim[0]) - buffer, xmax=max(self.support_location.XCoordinate,xlim[1]) + buffer)
         ylim = ax.get_ylim()
-        ax.set_ylim(ymin=min(self.support_location.YCoordinate,ylim[0]) - buffer, ymax=max(self.support_location.YCoordinate,ylim[1]) + buffer)
 
-        if locations:
-            # Plot result locations with names
-            self.result_locations.plot(ax=ax, color='k', marker='.', zorder=10, label='Uitvoerlocaties')
-            for _, loc in self.result_locations.iterrows():
-                ax.text(loc['geometry'].coords[0][0], loc['geometry'].coords[0][1], loc['Naam'])
+        # 1. flooddefence (zorder=1)
+        if len(self.flooddefence) != 0:
+            for i, row in enumerate(self.flooddefence.iterrows()):
+                _, geom_data = row
+                label = 'waterkering' if i == 0 else None
+                ax.plot(*geom_data['geometry'].xy, color='C3', linewidth=2, alpha=1.0, zorder=1, label=label)
 
-            self.support_locations.plot(ax=ax, color='k', marker='x', zorder=10, label='Steunpuntlocatie')
-            ax.plot(self.support_location.XCoordinate, self.support_location.YCoordinate, markeredgecolor='k', marker='x', zorder=10)
-            ax.text(self.support_location.XCoordinate, self.support_location.YCoordinate, '    ' + self.support_location.Name, color='k', zorder=10)
+        # 6. result_locations (zorder=6)
+        if locations and len(self.result_locations) != 0:
+            for i, loc in enumerate(self.result_locations.iterrows()):
+                _, loc_data = loc
+                label = 'uitvoerlocaties' if i == 0 else None
+                ax.plot(loc_data['geometry'].x, loc_data['geometry'].y, 'o', color='0.1', markersize=2, alpha=1.0, zorder=6, label=label)
+                ax.text(loc_data['geometry'].coords[0][0], loc_data['geometry'].coords[0][1], loc_data['Naam'])
 
-        # Plot flood defence
-        self.flooddefence.plot(ax=ax, color='C3', label='Normtraject')
+        # 7. support_locations (zorder=7)
+        if locations and len(self.support_locations) != 0:
+            for i, loc in enumerate(self.support_locations.iterrows()):
+                _, loc_data = loc
+                label = 'HRD-locaties' if i == 0 else None
+                ax.plot(loc_data['geometry'].x, loc_data['geometry'].y, 'x', color='0.1', markersize=6, alpha=1.0, zorder=7, label=label)
 
-        # Mark harbor inner area
-        ax.add_patch(PolygonPatch(self.inner, color='0.90'))
+        # 8. support_location (zorder=8)
+        if locations and not pd.isnull(self.support_location).all():
+            ax.plot(self.support_location.XCoordinate, self.support_location.YCoordinate, 
+                   color='0.1', marker='o', markersize=10, alpha=1.0, markerfacecolor='none', 
+                   zorder=8, label='steunpuntlocatie')
+            ax.text(self.support_location.XCoordinate, self.support_location.YCoordinate, 
+                   f'{self.support_location.Name}', color='k', zorder=8)
 
-        return fig, ax
+        # Update limits for locations
+        if locations and len(self.support_locations) != 0:
+            ax.set_xlim(xmin=np.nanmin([self.support_location.XCoordinate,xlim[0]]) - buffer, xmax=np.nanmax([self.support_location.XCoordinate,xlim[1]]) + buffer)
+            ax.set_ylim(ymin=np.nanmin([self.support_location.YCoordinate,ylim[0]]) - buffer, ymax=np.nanmax([self.support_location.YCoordinate,ylim[1]]) + buffer)
+        else:
+            ax.set_xlim(xmin=xlim[0] - buffer, xmax=xlim[1] + buffer)
+            ax.set_ylim(ymin=ylim[0] - buffer, ymax=ylim[1] + buffer)
+
+        # Create legend with proper zorder-based ordering
+        handles, labels = ax.get_legend_handles_labels()
+        if handles:
+            # Create a mapping of labels to their desired zorder
+            zorder_map = {
+                'waterkering': 1,
+                'binnengaats gebied': 2, 
+                'haventerrein': 3,
+                'havendam(men)': 4,
+                'haveningang': 5,
+                'uitvoerlocaties': 6,
+                'HRD-locaties': 7,
+                'steunpuntlocatie': 8
+            }
+            
+            # Pair handles with labels and sort by zorder
+            handle_label_pairs = list(zip(handles, labels))
+            sorted_pairs = sorted(handle_label_pairs, key=lambda x: zorder_map.get(x[1], 999))
+            
+            # Unpack sorted pairs
+            if sorted_pairs:
+                sorted_handles, sorted_labels = zip(*sorted_pairs)
+                ax.legend(sorted_handles, sorted_labels)
+
+        if save:
+            if self.mainmodel.project.settings['project']['name'] == '':
+                fig.savefig(os.path.join(path, f'schematisation_{datetime.now().strftime("%H%M%S_%d%m%Y")}.png'), dpi=150)
+            else:
+                fig.savefig(os.path.join(path, self.mainmodel.project.settings['project']['name']+'.png'), dpi=150)
+
+        if close:
+            plt.close(fig)
+            return None, None
+        else:
+            return fig, ax
 
     def get_harbor_bounds(self):
         """
@@ -2136,6 +2287,7 @@ class HarborSchematisation:
             bounds = None
 
         return bounds
+
 
 class InterpolationTable:
 
@@ -2183,7 +2335,6 @@ class InterpolationTable:
         vals[-1, :] = vals[-2, :]
         # Add to interpolation function
         self.f = interp2d(x, y, vals)
-
 
     def check_range(self, X, Y, Lr):
         """
@@ -2240,10 +2391,8 @@ class InterpolationTable:
 
         return self.f(X / Lr, Y / Lr)[0]
 
+
 class Project():
-    """
-    description of class
-    """
 
     def __init__(self, parent):
 
@@ -2388,7 +2537,6 @@ class Project():
                 },
                 'schematisations': {}
             },
-            # Toegevoegd Svasek 04/10/18 - Initialiseer de Hares settings
             'hares': {
                 'initialized': True,
                 'input_generated': True,
@@ -2428,7 +2576,9 @@ class Project():
                 'schematisations': {}
             },
             'export' : {
+                'remove_original_HRD_loc': False,
                 'export_HLCD_and_config': True,
+                'HRD': '',
                 'HLCD': '',
                 'export_succeeded': False,
             }
@@ -2479,7 +2629,6 @@ class Project():
         self.filedir = os.path.splitext(fname)[0]
 
         self.mainmodel.load_from_project()
-
 
     def check_settings(self, to_check, template):
         """
@@ -2538,7 +2687,6 @@ class Project():
 
         self.setCreated()
         self.save()
-
 
     def updateLastModified(self):
         now = time

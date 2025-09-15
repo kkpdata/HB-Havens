@@ -1,7 +1,8 @@
 @echo off
 REM Installation location of activate.bat may vary across systems. 
 REM Please update the line below according to your specific installation.
-set PATH=%PATH%;c:\ProgramData\miniconda3\Scripts\;
+set PATH=%PATH%;c:\ProgramData\miniforge\Scripts\;
+REM set PATH=%PATH%;c:\ProgramData\miniconda3\Scripts\;
 REM set PATH=%PATH%;c:\Anaconda3\Scripts\;
 
 call conda config --add channels conda-forge

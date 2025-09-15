@@ -5,7 +5,6 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 
 from hbhavens.ui import widgets
 
-
 class SplittedTab(widgets.AbstractTabWidget):
     """
     Widget with the background map
@@ -90,7 +89,6 @@ class SplittedTab(widgets.AbstractTabWidget):
             self.icon = icon
             self.button.setIcon(self.icon)
         
-    
 
 class InteractiveLegend:
 
@@ -138,6 +136,10 @@ class InteractiveLegend:
             self.widget.ax.legend([], [], fancybox=False, edgecolor='0.2', fontsize=8, labelspacing=0.8, borderpad=0.7, loc=self.loc, title=self.title)
             return None
 
+        # Sort keys by z-order if widget has element_dct
+        if hasattr(self.widget, 'element_dct'):
+            keys = sorted(keys, key=lambda k: self.widget.element_dct.get(k, {}).get('zorder', 999))
+
         # Collect the handles and labels and construct legend.
         self.legend = self.widget.ax.legend(
             [self.handles[key] for key in keys],
@@ -152,8 +154,9 @@ class InteractiveLegend:
             # Enable picking, 5 pts tolerance
             if isinstance(handle, plt.Line2D):
                 handle.set_pickradius(5)
-            else:
+            elif hasattr(handle, 'set_picker'):
                 handle.set_picker(5)
+            # If handle doesn't support picking, skip it but still add to lined dict
             self.lined[handle] = self.elements[key]
 
 

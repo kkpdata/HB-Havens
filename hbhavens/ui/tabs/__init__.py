@@ -48,9 +48,9 @@ class WelcomeTab(widgets.AbstractTabWidget):
         # Add text, seperated by spacers
         text = ['Hydraulische Belastingen Havens',
             'Welkom bij de applicatie Hydraulische Belastingen Havens (' + self.mainmodel.appName + ')\nVersie: ' + self.mainmodel.appVersion + '\nDatum: ' + self.mainmodel.appDate,
-            'Met deze applicatie kunt u Hydraulische Belastingen bepalen binnen zeehavens.\nDeze software is onderdeel van het WBI 2017. Elke beoordeling die uitgevoerd wordt met hydraulische belastingen afgeleid met deze software, valt in de categorie toets op maat.\nVoor meer informatie wordt verwezen naar de gebruikershandleiding ' + self.mainmodel.appName + '.',
-            'Deze applicatie bevat een wizard die u stap voor stap begeleidt in het proces van het bepalen van de Hydarulische Belastingen in (zee)havens.\nVoer eerst uw gebruikersnaam en emailadres in. Uw naam en emailadres worden gelogd bij het uitvoeren van berekeningen.',
-            'U kunt starten met de eerste stap uit de wizard (in het geval dat u een nieuwe haven gaat schematiseren), maar u kunt ook een bestaand project inladen en met de knoppen linksonder naar een bepaalde stap navigeren.',]
+            'Met deze applicatie kunt u Hydraulische Belastingen bepalen langs primaire keringen binnen havens.\nDeze software is onderdeel van productlaag 3 van het Beoordelings- en Ontwerpinstrumentarium (BOI).' ,
+            'Deze applicatie bevat een wizard die u stap voor stap begeleidt in het proces van het bepalen van de Hydraulische Belastingen in havens. U kunt starten met de eerste stap uit de wizard (in het geval dat u een nieuwe haven gaat schematiseren), maar u kunt ook een bestaand project inladen en met de knoppen linksonder naar een bepaalde stap navigeren. \nVoor meer informatie wordt verwezen naar de gebruikershandleiding ' + self.mainmodel.appName + '.',
+            'Voer eerst uw gebruikersnaam en emailadres in. Uw naam en emailadres worden gelogd bij het uitvoeren van berekeningen.',]
 
         for i, t in enumerate(text):
             label = QtWidgets.QLabel()
@@ -66,7 +66,7 @@ class WelcomeTab(widgets.AbstractTabWidget):
         hbox.addLayout(vbox)
 
         piclabel = QtWidgets.QLabel()
-        logo_path = os.path.join(self.mainmodel.datadir, 'logo_wbi_2017.jpg')
+        logo_path = os.path.join(self.mainmodel.datadir, 'icons', 'hbhavens_small.png')
         if not os.path.exists(logo_path):
             raise OSError('Path "{}" not found'.format(logo_path))
         wbi2017pic = QtGui.QPixmap(logo_path)
@@ -151,6 +151,7 @@ class SchematisationTab(widgets.AbstractTabWidget):
     """
     Tab widget with the schematisation input
     """
+
     def __init__(self, parent=None):
         """
         Constructor of the tab
@@ -427,6 +428,9 @@ class SchematisationTab(widgets.AbstractTabWidget):
             self.ask_to_proceed = True
         else:
             self.ask_to_proceed = False
+        
+        # Check if all required data is present to enable/disable volgende button
+        self.check_done()
 
     def may_proceed(self):
         """
@@ -443,7 +447,59 @@ class SchematisationTab(widgets.AbstractTabWidget):
             # We check only once
             self.ask_to_proceed = False
 
+            # Remove results
+            self.simple_calculation.initialize() 
+            self.simple_calculation.results_changed = True
+            self.settings['simple']['finished'] = False # Geavanceerde methode is ook niet finished...
+            self.tabwidgets['Overzicht'].remove_table()
+            self.tabwidgets['Datavisualisatie'].remove_table()
+
         return proceed
+
+    def check_done(self):
+        """
+        Check if all required data is properly loaded and validated in the schematisation
+        Required data:
+        - Harbor area (schematisation should have harbor area loaded)
+        - Breakwaters (schematisation should have breakwaters loaded)
+        - Representative bottom level (bedlevel should be set and valid)
+        - HRD/hydraulic loads (support_locations should be loaded)
+        - Support location (selected support location should be set)
+        - Result locations (result_locations should be loaded)
+        """
+        try:
+            # Check if harbor area is loaded (harbor_area attribute exists and is not empty)
+            harbor_area_loaded = self.schematisation.harborarea is not None and not self.schematisation.harborarea.empty
+            
+            # Check if breakwaters are loaded (breakwaters list exists and is not empty)
+            breakwaters_loaded = len(self.schematisation.breakwaters) > 0
+            
+            # Check if representative bottom level is set and valid (bedlevel exists and is not None/NaN)
+
+            rep_bottom_valid = self.schematisation.bedlevel is not None and not (isinstance(self.schematisation.bedlevel, float) and np.isnan(self.schematisation.bedlevel))
+            
+            # Check if HRD/hydraulic loads are loaded (support_locations exists and is not empty)
+            hrd_loaded = self.schematisation.support_locations is not None and len(self.schematisation.support_locations) > 0
+            
+            # Check if support location is selected (selected support location should be set)
+            support_selected = self.schematisation.support_location is not None and pd.notnull(self.schematisation.support_location).all()
+            
+            # Check if result locations are loaded (result_locations exists and is not empty)
+            result_locations_loaded = self.schematisation.result_locations is not None and len(self.schematisation.result_locations) > 0
+            
+            # All conditions must be met
+            all_valid = (harbor_area_loaded and 
+                        breakwaters_loaded and 
+                        rep_bottom_valid and 
+                        hrd_loaded and 
+                        support_selected and 
+                        result_locations_loaded)
+            
+            self.set_finished(all_valid)
+            
+        except Exception as e:
+            # If any error occurs during validation, consider tab not finished
+            self.set_finished(False)
 
     def to_string_check_exceptions(self, value):
         if isinstance(value,str):
@@ -455,7 +511,6 @@ class SchematisationTab(widgets.AbstractTabWidget):
             else:
                 return str(value)
         
-
     def openData(self):
         """
         Fill line edits etcetera with data from project file
@@ -506,7 +561,9 @@ class SchematisationTab(widgets.AbstractTabWidget):
 
         if self.settings['schematisation']['result_locations_shape']:
             self.result_location_browse.set_value(self.settings['schematisation']['result_locations_shape'])
-            self.set_finished(True)
+        
+        # Check if all required data is loaded to determine if tab is finished
+        self.check_done()
 
     def enable_elements(self, layout, boolean):
         for i in range(layout.count()):
@@ -535,6 +592,7 @@ class SchematisationTab(widgets.AbstractTabWidget):
             if not self.may_proceed():
                 self.repbottomlevel.LineEdit.setText(old_level)
                 return None
+
         # Replace comma with dot if presenct
         rep_bottom_input = float(rep_bottom_input.replace(',', '.'))
 
@@ -548,6 +606,7 @@ class SchematisationTab(widgets.AbstractTabWidget):
             self.schematisation.bedlevel = rep_bottom_input
             self.settings['schematisation']['representative_bedlevel'] = rep_bottom_input
             self.mainwindow.setDirty()
+            self.check_done()
 
     def _parse_input_coord(self):
         """Parse the input coordinate for the harbor entrance"""
@@ -557,7 +616,7 @@ class SchematisationTab(widgets.AbstractTabWidget):
         valid = self.schematisation.check_entrance_coordinate(crd)
         # Check if succeeded
         if valid:
-            self.schematisation.entrance = crd
+            self.schematisation.entrance_coordinate = crd
             self.settings['schematisation']['entrance_coordinate'] = crd
             self.schematisation.generate_harbor_bound()
             self.overview_tab.mapwidget.set_visible('inner')
@@ -667,7 +726,7 @@ class SchematisationTab(widgets.AbstractTabWidget):
         self.schematisation.add_result_locations(path)
         self.overview_tab.mapwidget.set_visible('result_locations')
 
-        self.set_finished(True)
+        self.check_done()
 
     def _generate_locations_clicked(self):
         """
@@ -721,6 +780,7 @@ class SchematisationTab(widgets.AbstractTabWidget):
             self.mainwindow.setDirty()
             # Visualize in overview
             self.overview_tab.mapwidget.set_visible('support_location')
+            self.check_done()
         else:
             # Reset the combobox
             self.combobox.setCurrentText(self.settings['schematisation']['support_location_name'])
@@ -732,6 +792,9 @@ class SchematisationTab(widgets.AbstractTabWidget):
         """
         if not self.may_proceed():
             return None
+        else:
+            self.overview_tab.mapwidget.remove_plot_element('inner')
+            self.overview_tab.mapwidget.canvas.draw_idle()
 
         # Get path with dialog
         path = QtWidgets.QFileDialog.getOpenFileName(self.harborareabrowse.LineEdit, 'Open shapefile met haventerrein', '', "Shape file (*.shp)")[0]
@@ -746,6 +809,7 @@ class SchematisationTab(widgets.AbstractTabWidget):
             self.overview_tab.mapwidget.set_visible('harborarea')
             # Adjust line edit
             self.harborareabrowse.LineEdit.setText(path)
+            self.check_done()
         except Exception as e:
             print(e)
 
@@ -754,9 +818,20 @@ class SchematisationTab(widgets.AbstractTabWidget):
         Method to import file path for breakwater and add it to the
         harbor area class. Also the plotting is called from here.
         """
+
         # Ask if the user may proceed
         if not self.may_proceed():
             return None
+        else:
+            # Remove entrance and inner if present
+            self.schematisation.del_entrance_coordinate()
+            self.schematisation.del_breakwaters()
+
+            # Remove plotting elements  
+            self.overview_tab.mapwidget.remove_plot_element('breakwaters')
+            self.overview_tab.mapwidget.remove_plot_element('inner')
+            self.overview_tab.mapwidget.remove_plot_element('entrance')
+            self.overview_tab.mapwidget.canvas.draw_idle()
 
         # Get path with dialog
         path = QtWidgets.QFileDialog.getOpenFileName(self.breakwaterbrowse.LineEdit, 'Open shapefile met havendammen', '', "Shape file (*.shp)")[0]
@@ -793,6 +868,7 @@ class SchematisationTab(widgets.AbstractTabWidget):
                 self.hoogte2.setText(str(self.schematisation.breakwater_properties['height'][1]))
                 self.alpha2.setText(str(self.schematisation.breakwater_properties['alpha'][1]))
                 self.beta2.setText(str(self.schematisation.breakwater_properties['beta'][1]))
+            self.check_done()
         except Exception as e:
             print(e)
 
@@ -820,7 +896,6 @@ class SchematisationTab(widgets.AbstractTabWidget):
         else:
             self.section_label.setText('[voeg een normtraject toe]')
         self.mainwindow.setDirty()
-
 
     def _load_HRD(self):
         """
@@ -859,6 +934,7 @@ class SchematisationTab(widgets.AbstractTabWidget):
             # Add support locations to combobox
             self.fill_supportloc_combobox()
             self.settings['schematisation']['support_location_name'] = ''
+            self.check_done()
 
     def fill_supportloc_combobox(self):
         """
@@ -872,6 +948,7 @@ class SchematisationTab(widgets.AbstractTabWidget):
         self.combobox.clear()
         self.combobox.addItems(support_location_names)
         self.combobox.setCurrentText('')
+
 
 class CalculationMethodTab(widgets.AbstractTabWidget):
     """
@@ -947,12 +1024,10 @@ class CalculationMethodTab(widgets.AbstractTabWidget):
         self.swan_checkbox.toggled.connect(self.enable_swan)
         self.swan_checkbox.setFixedWidth(120)
         
-        # Aangepast Svasek 03/10/18 - Pharos optie omgezet naar een Radiobutton
         self.pharos_checkbox = QtWidgets.QRadioButton('SWAN + PHAROS')
         self.pharos_checkbox.toggled.connect(self.enable_pharos)
         self.pharos_checkbox.setFixedWidth(120)
         
-        # Toegevoegd Svasek 03/10/18 - Hares optie toegevoegd
         self.hares_checkbox = QtWidgets.QRadioButton('SWAN + HARES')
         self.hares_checkbox.toggled.connect(self.enable_hares)
         self.hares_checkbox.setFixedWidth(120)
@@ -962,7 +1037,6 @@ class CalculationMethodTab(widgets.AbstractTabWidget):
         cb_layout = QtWidgets.QVBoxLayout()
         cb_layout.addWidget(self.swan_checkbox)
         cb_layout.addWidget(self.pharos_checkbox)
-        # Toegevoegd Svasek 03/10/18 - Hares knop aan de layout toegevoegd
         cb_layout.addWidget(self.hares_checkbox)
         
         cb_layout.addItem(QtWidgets.QSpacerItem(0, 0, QtWidgets.QSizePolicy.Maximum, QtWidgets.QSizePolicy.Expanding))
@@ -1041,7 +1115,6 @@ class CalculationMethodTab(widgets.AbstractTabWidget):
         self.settings['calculation_method']['motivation'] = self.motivationtext.toPlainText()
         self.mainwindow.setDirty()
 
-    # Aangepast Svasek 03/10/18 - uitvinken van Hares toegevoegd
     def handleSimpleButton(self):
 
         self.simple_button.setChecked(True)
@@ -1065,8 +1138,6 @@ class CalculationMethodTab(widgets.AbstractTabWidget):
         self.mainwindow.set_calculation_method('advanced')
         self.mainwindow.setDirty()
 
-
-    # Aangepast Svasek 03/10/18 - Uitvinken van Hares toegevoegd
     def enable_pharos(self, state):
         if self.signalsBlocked():
             return None
@@ -1075,7 +1146,6 @@ class CalculationMethodTab(widgets.AbstractTabWidget):
         self.mainwindow.set_calculation_method('advanced')
         self.mainwindow.setDirty()
 
-    # Toegevoegd Svasek 03/10/18 - Optie om Hares te selecteren toegevoegd
     def enable_hares(self, state):
         if self.signalsBlocked():
             return None
@@ -1090,7 +1160,6 @@ class CalculationMethodTab(widgets.AbstractTabWidget):
         self.swan_checkbox.setEnabled(True)
         self.pharos_checkbox.setEnabled(True)
         
-        # Toegevoegd Svasek 03/10/18 - Optie om Hares te selecteren toegevoegd
         self.hares_checkbox.setEnabled(True)
         
         self.mainwindow.set_calculation_method('advanced')
@@ -1140,6 +1209,7 @@ class CalculationMethodTab(widgets.AbstractTabWidget):
             self.handleSimpleButton()
         else:
             self.handleAdvancedButton()
+
 
 class GenerateHarborLocationsWindow(QtWidgets.QDialog):
     """
@@ -1249,23 +1319,25 @@ class GenerateHarborLocationsWindow(QtWidgets.QDialog):
 
         self.schematisation.generate_result_locations(distance, interval, interp_length)
         self.savebutton.setEnabled(True)
+        dialogs.NotificationDialog('De uitvoerlocaties zijn gegenereerd. Sla ze op met "Opslaan als".', severity='information')
 
-def ConfirmOverwrite(self, path):
-    """
-    Function to confirm overwrite when saving file.
+    def ConfirmOverwrite(self, path):
+        """
+        Function to confirm overwrite when saving file.
 
-    Parameters
-    ----------
-    path : str
-        Save path
-    """
+        Parameters
+        ----------
+        path : str
+            Save path
+        """
 
-    confirmation = QtWidgets.QMessageBox.question(self,
-            'Bevestig Opslaan Als',
-            '{} bestaat al.\nWilt u het bestand overschrijven?'.format(os.path.basename(path)),
-            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+        confirmation = QtWidgets.QMessageBox.question(self,
+                'Bevestig Opslaan Als',
+                '{} bestaat al.\nWilt u het bestand overschrijven?'.format(os.path.basename(path)),
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
 
-    self.overwrite = (confirmation == QtWidgets.QMessageBox.Yes)
+        self.overwrite = (confirmation == QtWidgets.QMessageBox.Yes)
+
 
 class SimpleCalculationTab(widgets.AbstractTabWidget):
     """
@@ -1409,6 +1481,7 @@ class SimpleCalculationResultTab(widgets.AbstractTabWidget):
     """
     Tab widget with result tables from the simple calculation
     """
+
     def __init__(self, parent=None):
         """
         Constructor of the tab
@@ -1507,7 +1580,6 @@ class SimpleCalculationResultTab(widgets.AbstractTabWidget):
         # Disable index column
         self.tableview.verticalHeader().setVisible(False)
         
-
     def add_dataframes(self, dataframes, names):
     
         self.models = {}
@@ -1541,7 +1613,10 @@ class SimpleCalculationResultTab(widgets.AbstractTabWidget):
             try:
                 maxval = dataframe[column].max()
             except:
-                maxval = dataframe[column].cat.as_ordered().max()
+                try:
+                    maxval = dataframe[column].cat.as_ordered().max()
+                except: # Diffraction Point exception
+                    maxval = None
             
             width = 36 + len(str(maxval)) * 6
             labelwidth = len(column) * 7
@@ -1806,6 +1881,7 @@ class SwanCalculationTab(widgets.AbstractTabWidget):
                 self.mainwindow.setDirty()
                 self.import_progress.setValue(0)
 
+
 class AdvancedCalculationSwanResultTab(widgets.AbstractTabWidget):
     """
     Tab with swan result table
@@ -1937,6 +2013,7 @@ class PharosInitializeTab(widgets.AbstractTabWidget):
         
         # Update comboboxes in widget
         self.table_widget.update_comboboxes()
+
 
 class PharosCalculationTab(widgets.AbstractTabWidget):
     """
@@ -2111,6 +2188,7 @@ class PharosCalculationTab(widgets.AbstractTabWidget):
             self.import_progress.setValue(0)
             self.set_finished(False)
 
+
 class AdvancedCombinedResultsTab(widgets.AbstractTabWidget):
     """
     Tab for pharos or hares calculation results
@@ -2131,7 +2209,6 @@ class AdvancedCombinedResultsTab(widgets.AbstractTabWidget):
         self.setLayout(QtWidgets.QVBoxLayout())
         
         # Add view        
-        # Aangepast Svasek 04/10/18 - if-else optie met Hares toegevoegd
         if self.settings['calculation_method']['include_pharos']: # PHAROS results
             view_columns = ['Location', 'Load combination', 'Hs pharos', 'Tp pharos',
                             'Tm-1,0 pharos', 'Wave direction pharos',
@@ -2168,7 +2245,6 @@ class AdvancedCombinedResultsTab(widgets.AbstractTabWidget):
         self.layout().addWidget(self.export_button, 0, QtCore.Qt.AlignRight)
 
 
-# Toegevoegd Svasek 03/10/18 - Hares tab toegevoegd
 class HaresCalculationTab(widgets.AbstractTabWidget):
     """
     Widget class to configure Hares advanced calculation.
@@ -2306,6 +2382,7 @@ class HaresCalculationTab(widgets.AbstractTabWidget):
         else:
             self.import_progress.setValue(0)
             self.set_finished(False)
+
 
 class ModelUncertaintyTab(widgets.AbstractTabWidget):
     """
@@ -2449,6 +2526,8 @@ class ExportToDatabaseTab(widgets.AbstractTabWidget):
         self.init_ui()
 
         # Load from project
+        if self.export_settings['HRD']:
+            self.hrd_line_edit.LineEdit.setText(self.export_settings['HRD'])
         if self.export_settings['HLCD']:
             self.hlcd_line_edit.LineEdit.setText(self.export_settings['HLCD'])
         if self.export_settings['export_succeeded']:
@@ -2471,26 +2550,12 @@ class ExportToDatabaseTab(widgets.AbstractTabWidget):
         self.setLayout(QtWidgets.QVBoxLayout())
         self.layout().setSpacing(10)
 
-        # Add hlcd browse
-        HLCDframe = QtWidgets.QGroupBox()
-        HLCDframe.setTitle('HLCD config-databases:')
-        HLCDframe.setLayout(QtWidgets.QVBoxLayout())
-        self.hlcd_line_edit = widgets.ExtendedLineEdit(label='HLCD:', browsebutton=QtWidgets.QPushButton('...', clicked=self._load_HLCD))
-        self.config_info_label = QtWidgets.QLabel('Merk op dat de locatie van config-database niet opgegeven hoeft te worden. Deze wordt bepaald op basis van de naam van de HRD')
+        # Add HRD browse
+        HRDframe = QtWidgets.QGroupBox()
+        HRDframe.setTitle('HRD database')
+        HRDframe.setLayout(QtWidgets.QVBoxLayout())
 
-        self.meta_database_checkbox = QtWidgets.QCheckBox('Exporteer HLCD en config-databases')
-        self.meta_database_checkbox.setChecked(True)
-        self.meta_database_checkbox.stateChanged.connect(self._enable_hlcd)
-        self.meta_database_checkbox.setChecked(self.export_settings['export_HLCD_and_config'])
-        HLCDframe.layout().addWidget(self.meta_database_checkbox)
-        HLCDframe.layout().addWidget(self.hlcd_line_edit)
-        HLCDframe.layout().addWidget(self.config_info_label)
-        self.layout().addWidget(HLCDframe)
-
-        # Add tableview
-        self.HRDframe = QtWidgets.QGroupBox()
-        self.HRDframe.setTitle('Geef per locatie een exportnaam en de HRD waaraan de data toegevoegd worden.')
-        self.HRDframe.setLayout(QtWidgets.QVBoxLayout())
+        self.hrd_line_edit = widgets.ExtendedLineEdit(label='HRD:', browsebutton=QtWidgets.QPushButton('...', clicked=self._load_HRD))
 
         self.tableview = widgets.DataFrameWidget(
             self.export.export_dataframe,
@@ -2499,33 +2564,48 @@ class ExportToDatabaseTab(widgets.AbstractTabWidget):
             index=False
         )
         self.tableview.horizontalHeader.setStretchLastSection(False)
-        self.tableview.setItemDelegateForColumn(3, widgets.ButtonDelegate(self))
-        self.tableview.setColumnWidth(3, 30)
-        # self.tableview.setColumnWidth(0, 100)
+        # self.tableview.setItemDelegateForColumn(3, widgets.ButtonDelegate(self))
         self.tableview.setColumnWidth(1, 200)
-        # self.tableview.setColumnWidth(2, 100)
-        # self.tableview.setColumnWidth(3, 100)
+        self.tableview.setColumnWidth(2, 200)
         self.tableview.setWordWrap(False)
         self.tableview.setTextElideMode(QtCore.Qt.ElideLeft)
-        self.tableview.horizontalHeader.setSectionResizeMode(2, QtWidgets.QHeaderView(Qt.Qt.Horizontal).Stretch)
+        # self.tableview.horizontalHeader.setSectionResizeMode(2, QtWidgets.QHeaderView(Qt.Qt.Horizontal).Stretch)
         self.tableview.model.flags = self.model_flags
 
-        # Add constraint
-        self.tableview.model.add_constraints('SQLite-database', os.path.exists, 'Pad niet gevonden.')
-
-        # Add view to layout
-        self.HRDframe.layout().addWidget(self.tableview)
+        self.remove_hrd_checkbox = QtWidgets.QCheckBox('Remove original locations from HRD')
+        self.remove_hrd_checkbox.setChecked(self.export_settings['remove_original_HRD_loc'])
+        self.remove_hrd_checkbox.stateChanged.connect(self._enable_remove_hrd)
 
         buttons = QtWidgets.QHBoxLayout()
         buttons.addItem(QtWidgets.QSpacerItem(0, 0, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Maximum))
 
         # Add export button
-        buttons.addWidget(QtWidgets.QPushButton('Exporteren', clicked=self._export_table))
+        buttons.addWidget(QtWidgets.QPushButton('Exporteer lijst', clicked=self._export_table))
         # Add import button
-        buttons.addWidget(QtWidgets.QPushButton('Importeren', clicked=self._import_table))
-        self.HRDframe.layout().addLayout(buttons)
+        buttons.addWidget(QtWidgets.QPushButton('Importeer lijst', clicked=self._import_table))
 
-        self.layout().addWidget(self.HRDframe)
+        HRDframe.layout().addWidget(self.hrd_line_edit)
+        HRDframe.layout().addWidget(self.remove_hrd_checkbox)
+        HRDframe.layout().addWidget(self.tableview)
+        HRDframe.layout().addLayout(buttons)
+
+        self.layout().addWidget(HRDframe)
+
+        # Add hlcd browse
+        HLCDframe = QtWidgets.QGroupBox()
+        HLCDframe.setTitle('HLCD en Config-databases:')
+        HLCDframe.setLayout(QtWidgets.QVBoxLayout())
+        self.hlcd_line_edit = widgets.ExtendedLineEdit(label='HLCD:', browsebutton=QtWidgets.QPushButton('...', clicked=self._load_HLCD))
+        self.config_info_label = QtWidgets.QLabel('Merk op dat de locatie van config-database niet opgegeven hoeft te worden. Deze wordt bepaald op basis van de naam van de HRD')
+
+        meta_database_checkbox = QtWidgets.QCheckBox('Exporteer HLCD en config-databases')
+        meta_database_checkbox.setChecked(True)
+        meta_database_checkbox.stateChanged.connect(self._enable_hlcd)
+        meta_database_checkbox.setChecked(self.export_settings['export_HLCD_and_config'])
+        HLCDframe.layout().addWidget(meta_database_checkbox)
+        HLCDframe.layout().addWidget(self.hlcd_line_edit)
+        HLCDframe.layout().addWidget(self.config_info_label)
+        self.layout().addWidget(HLCDframe)
 
         hlayout = QtWidgets.QHBoxLayout()
         # Add export to db button
@@ -2564,6 +2644,21 @@ class ExportToDatabaseTab(widgets.AbstractTabWidget):
         # enable or disable label with info on config
         self.config_info_label.setEnabled(checked)
 
+    def _enable_remove_hrd(self, state):
+        """
+        Enable or disable the removal of locations from the HRD, based on the
+        changed state of the checkbox.
+
+        Parameters
+        ----------
+        state : QtCore.Qt state
+            checked or unchecked
+        """
+
+        # get checked as boolean
+        checked = state == QtCore.Qt.Checked
+        # Change settings
+        self.export_settings['remove_original_HRD_loc'] = checked
 
     def _load_HLCD(self):
         """
@@ -2586,6 +2681,28 @@ class ExportToDatabaseTab(widgets.AbstractTabWidget):
         self.mainwindow.setDirty()
         # Adjust line edit
         self.hlcd_line_edit.set_value(path)
+
+    def _load_HRD(self):
+        """
+        Method to load a HRD database. The database is loaded and modified in
+        the export routine.
+        """
+        # Get path with dialog
+        path = QtWidgets.QFileDialog.getOpenFileName(
+            self.hrd_line_edit.LineEdit,
+            'Open SQLite-database (HRD) om aan te passen',
+            '',
+            "SQLite database (*.sqlite)"
+        )[0]
+        if not path:
+            return None
+        # Save path to project structure
+        self.export_settings['HRD'] = path
+        # Add to schematisation
+        self.mainmodel.export.add_HRD(path)
+        self.mainwindow.setDirty()
+        # Adjust line edit
+        self.hrd_line_edit.set_value(path)
 
     def cellButtonClicked(self):
         # This slot will be called when our button is clicked.
@@ -2633,12 +2750,12 @@ class ExportToDatabaseTab(widgets.AbstractTabWidget):
             raise ValueError('Niet alle locatienamen ({}) komen voor in de tabel.'.format(
                 ', '.join(np.array(self.export.location_names)[~present_indices].tolist())))
 
-        for _, row in df.iterrows():
-            sqlpath = row['SQLite-database']
-            if pd.isnull(sqlpath):
-                continue
-            if not os.path.exists(sqlpath):
-                raise OSError('Pad naar database niet gevonden: {}'.format(sqlpath))
+        # for _, row in df.iterrows():
+        #     sqlpath = row['SQLite-database']
+        #     if pd.isnull(sqlpath):
+        #         continue
+        #     if not os.path.exists(sqlpath):
+        #         raise OSError('Pad naar database niet gevonden: {}'.format(sqlpath))
 
         # Als geen fouten, verander data
         df['...'] = np.nan
@@ -2667,21 +2784,11 @@ class ExportToDatabaseTab(widgets.AbstractTabWidget):
     def _export_to_database(self):
         self.progress_bar.setValue(0)
 
-        # Check if the export table is complete
-        if self.export.export_dataframe['SQLite-database'].isnull().any():
-            export = dialogs.QuestionDialog.question(
-                self,
-                self.mainmodel.appName,
-                (
-                    'Niet alle paden zijn ingevuld, alleen de ingevulde locaties worden geëxporteerd.'
-                    '\nWeet u zeker dat u deze wilt doorgaan?'
-                )
-            )
-            if not export:
-                return None
-        
+        # Check if HRD is given and exists
+        if not os.path.exists(self.project.settings['export']['HRD']):
+            raise ValueError('Het HRD pad is niet opgegeven.')        
         # Check if all locations are filled in
-        subset = self.export.export_dataframe[['SQLite-database', 'Exportnaam']].dropna(subset=['SQLite-database'])
+        subset = self.export.export_dataframe[['Exportnaam']]
         if subset.isnull().any().any():
             raise ValueError('Niet alle locatienamen zijn ingevuld')
         # Check if all location names are unique
@@ -2697,3 +2804,4 @@ class ExportToDatabaseTab(widgets.AbstractTabWidget):
         self.export_settings['export_succeeded'] = True
         self.progress_bar.setValue(100)
         self.mainwindow.setDirty()
+        dialogs.NotificationDialog('De data zijn succesvol toegevoegd aan de database(s).', severity='information')

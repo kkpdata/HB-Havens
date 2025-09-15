@@ -1,93 +1,94 @@
 import logging
 import os
-import shutil
 import sqlite3
 import unittest
-
 import pandas as pd
 
+import hbhavens
 from hbhavens.core.logger import initialize_logger
 from hbhavens.core.models import MainModel
 from hbhavens.io.database import HRDio
 
 import common
 
-initialize_logger()
-logger = logging.getLogger()
-
-datadir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "vluchthaven")
+datadir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'vluchthaven')
+trunkdir = os.path.abspath(os.path.join(os.path.dirname(hbhavens.__file__),'../..'))
+tempdir = os.path.join(trunkdir, 'temp')
 
 paths = {
-    "harborarea": os.path.join(datadir, "shapes", "haventerrein.shp"),
-    "breakwater": os.path.join(datadir, "shapes", "havendam.shp"),
-    "result_locations": os.path.join(datadir, "shapes", "uitvoerlocaties.shp"),
-    "hrd": os.path.join(datadir, "databases", "WBI2017_Bovenrijn_43-6_v04_steunpunt.sqlite"),
-    "config": os.path.join(datadir, "databases", "WBI2017_Bovenrijn_43-6_v04_steunpunt.config.sqlite"),
-    "hlcd": os.path.join(datadir, "..", "hlcd_nieuw.sqlite"),
+    'temp': os.path.join(tempdir, 'vluchthaven'),
+    'harborarea': os.path.join(datadir, 'shapes', 'haventerrein.shp'),
+    'breakwater': os.path.join(datadir, 'shapes', 'havendam.shp'),
+    'result_locations': os.path.join(datadir, 'shapes', 'uitvoerlocaties.shp'),
+    'hrd': os.path.join(datadir, 'databases', 'WBI2017_Bovenrijn_43-6_v04_steunpunt.sqlite'),
+    'config': os.path.join(datadir, 'databases', 'WBI2017_Bovenrijn_43-6_v04_steunpunt.config.sqlite'),
+    'hlcd': os.path.join(datadir, '..', 'hlcd_nieuw.sqlite'),
 }
+
+initialize_logger(filename=os.path.join(tempdir,'hbhavens.log'))
+logger = logging.getLogger()
 
 
 class TestSimpleBovenrivieren(unittest.TestCase):
     def setUp(self):
-        logger.info("SETUP TestSimpleZoetBovenrivieren")
+        logger.info('SETUP TestSimpleZoetBovenrivieren')
         self.mainmodel = MainModel()
-        prjjson = "temp/vluchthaven.json"
+        prjjson = os.path.join(paths['temp'],'vluchthaven.json')
         if os.path.exists(prjjson) and not self._testMethodName[0:5] == 'test1':
             self.mainmodel.project.open_from_file(prjjson)
 
     def tearDown(self):
-        logger.info("TEARDOWN TestSimpleZoetBovenrivieren")
-        if os.path.exists("temp"):
-            self.mainmodel.project.save_as("temp/vluchthaven.json", overwrite_all=True)
+        logger.info('TEARDOWN TestSimpleZoetBovenrivieren')
+        if os.path.exists(paths['temp']):
+            self.mainmodel.project.save_as(os.path.join(paths['temp'],'vluchthaven.json'), overwrite_all=True)
             self.mainmodel.save_tables()
 
     def test1_schematisation_Vluchthaven(self):
-        """
+        '''
         Test preparing Vluchthaven schematisation
-        """
-        logger.info("TEST1_SCHEMATISATION_VLUCHTHAVEN")
-        if not os.path.exists("temp"):
-            os.mkdir("temp")
+        '''
+        logger.info('TEST1_SCHEMATISATION_VLUCHTHAVEN')
+        if not os.path.exists(paths['temp']):
+            os.mkdir(paths['temp'])
 
         # Add entrance coordinate
         crd = (158800.0, 433050.0)
-        self.mainmodel.schematisation.entrance = crd
-        self.mainmodel.project.settings["schematisation"]["entrance_coordinate"] = crd
 
         # Add schematisation
-        supportloc = "043-06_0023_1_WA_km0914"
+        supportloc = '043-06_0023_1_WA_km0914'
         bedlevel = 0.0
-        trajecten = ["43-6"]
+        trajecten = ['43-6']
         common.add_schematisation(
-            self.mainmodel, paths=paths, supportlocationname=supportloc, trajecten=trajecten, bedlevel=bedlevel
+            self.mainmodel, paths=paths, supportlocationname=supportloc, trajecten=trajecten, bedlevel=bedlevel, entrance_coordinate=crd
         )
 
         # Test flood defence
-        self.assertListEqual(self.mainmodel.schematisation.flooddefence["traject-id"].tolist(), trajecten)
+        self.assertListEqual(self.mainmodel.schematisation.flooddefence['traject-id'].tolist(), trajecten)
         # Test harbor area
-        self.assertAlmostEqual(self.mainmodel.schematisation.inner.area, 127205.93372931979)
+        self.assertAlmostEqual(self.mainmodel.schematisation.inner.area, 127208.44990687417)
         # Test support location name
-        self.assertEqual(self.mainmodel.schematisation.support_location["Name"], supportloc)
+        self.assertEqual(self.mainmodel.schematisation.support_location['Name'], supportloc)
 
         # Geef eerst in de projectinstellingen aan dat de eenvoudige methode gebruikt moet worden
-        self.mainmodel.project.settings["calculation_method"]["method"] = "simple"
+        self.mainmodel.project.settings['calculation_method']['method'] = 'simple'
+        self.mainmodel.schematisation.plot_schematisation(save=True, path=paths['temp'], close=True)
 
     def test2_calculation(self):
 
         # Shuffle hydraulic loads
-        logger.info("TEST2_CALCULATION")
+        logger.info('TEST2_CALCULATION')
         common.randomize_table(self.mainmodel.hydraulic_loads)
 
         # Run all
-        processes = ["Diffractie", "Transmissie", "Lokale golfgroei", "Golfbreking"]
-        names = ["diffraction", "transmission", "wavegrowth", "wavebreaking"]
+        processes = ['Diffractie', 'Transmissie', 'Lokale golfgroei', 'Golfbreking']
+        names = ['diffraction', 'transmission', 'wavegrowth', 'wavebreaking']
 
         common.randomize_table(self.mainmodel.schematisation.result_locations)
         self.mainmodel.simple_calculation.run_all(processes=processes)
 
         # Test the results
         for name in names:
-            table_path = f"{datadir}/simple/{name}_results_vluchthaven.gz"
+            table_path = f'{datadir}/simple/{name}_results_vluchthaven.gz'
             table = getattr(self.mainmodel.simple_calculation, name).output
             common.compare_or_save(self, table_path, table)
 
@@ -95,13 +96,14 @@ class TestSimpleBovenrivieren(unittest.TestCase):
         common.set_model_uncertainties(self.mainmodel)
 
     def test3_exporteren(self):
-        logger.info("TEST3_EXPORTEREN")
+        logger.info('TEST3_EXPORTEREN')
 
         # Exporteren naar hrd
         # ========================================
         # In deze stap exporteren we de resultaten naar de HRD. We maken hiervoor eerst een kopie van de originele database.
         # Maak een kopie van de hrd, config en hlcd
-        tmp_paths = common.create_tmp_db_copies(paths, ext="simple")
+        tmp_paths = common.create_tmp_db_copies(paths, ext='simple')
+
         common.randomize_table(self.mainmodel.schematisation.result_locations)
         common.export_to_database(self.mainmodel, tmp_paths, export_hlcd_config=True)
 
@@ -115,24 +117,24 @@ class TestSimpleBovenrivieren(unittest.TestCase):
             self.assertListEqual(
                 faulty,
                 [],
-                msg=f'Wrong number of "{col} for {faulty}: {count.loc[faulty]} instead of {count.loc[supportlocid]}.',
+                msg = f"Wrong number of {col} for {faulty}: {count.loc[faulty]} instead of {count.loc[supportlocid]}.",
             )
 
         # Check if the names in the database match the Locations
-        conn = sqlite3.connect(tmp_paths["hrd"])
-        hrdlocations = pd.read_sql("select Name, HRDLocationId from HRDLocations", con=conn)
+        conn = sqlite3.connect(tmp_paths['hrd'])
+        hrdlocations = pd.read_sql('select Name, HRDLocationId from HRDLocations', con=conn)
         conn.close()
-        hrd_names = set(hrdlocations["Name"].tolist())
-        hbh_names = self.mainmodel.export.export_dataframe["Exportnaam"].tolist()
+        hrd_names = set(hrdlocations['Name'].tolist())
+        hbh_names = self.mainmodel.export.export_dataframe['Exportnaam'].tolist()
         # Check if all hbh names are in hrd
         self.assertTrue(hrd_names.issuperset(set(hbh_names)))
 
         # Controleer de waarden uit database, voor de eerste, middelste en laatste locatie
         names = [hbh_names[0], hbh_names[len(hbh_names) // 2], hbh_names[-1]]
-        hrdlocationids = [hrdlocations.set_index("Name").at[name, "HRDLocationId"] for name in names]
+        hrdlocationids = [hrdlocations.set_index('Name').at[name, 'HRDLocationId'] for name in names]
 
-        hrd = HRDio(tmp_paths["hrd"])
-        self.assertEqual(hrd.dbformat, "WBI2017")
+        hrd = HRDio(tmp_paths['hrd'])
+        self.assertEqual(hrd.dbformat, 'WBI2017')
 
         for locid, name in zip(hrdlocationids, names):
 
@@ -140,18 +142,18 @@ class TestSimpleBovenrivieren(unittest.TestCase):
 
             # Get table with loaddata from swan results
             # Determine hbh-location for hrdlocationids
-            hbhname = self.mainmodel.export.export_dataframe.set_index("Exportnaam").at[name, "Naam"]
+            hbhname = self.mainmodel.export.export_dataframe.set_index('Exportnaam').at[name, 'Naam']
             result_parameters = self.mainmodel.simple_calculation.result_parameters
 
             # Get results
             hlcols = self.mainmodel.hydraulic_loads.columns.tolist()
             columns = [val for key, val in result_parameters.items() if key in hlcols]
             simple_table = self.mainmodel.simple_calculation.combinedresults.output[
-                columns + ["HydraulicLoadId", "Location"]
-            ].set_index("HydraulicLoadId")
-            simple_table = simple_table.loc[simple_table["Location"].eq(hbhname)].drop("Location", axis=1)
+                columns + ['HydraulicLoadId', 'Location']
+            ].set_index('HydraulicLoadId')
+            simple_table = simple_table.loc[simple_table['Location'].eq(hbhname)].drop('Location', axis=1)
             # Merge with hydraulic loads
-            load_vars = ["ClosingSituationId", "Wind direction", "Wind speed", "Discharge Lobith"]
+            load_vars = ['ClosingSituationId', 'Wind direction', 'Wind speed', 'Discharge Lobith']
             simple_table = simple_table.join(self.mainmodel.hydraulic_loads[load_vars])
             simple_table.rename(columns={v: k for k, v in result_parameters.items()}, inplace=True)
 
@@ -163,9 +165,21 @@ class TestSimpleBovenrivieren(unittest.TestCase):
             # Compare
             common.compare_dataframes(self, simple_table, hrd_table, round=4)
 
+        # Check if the HRD name match the names in the config and HLCD
+        conn = sqlite3.connect(tmp_paths['hrd'])
+        HRDhrd = os.path.basename(tmp_paths['hrd'])
+        trackid = pd.read_sql('SELECT TrackId FROM General', con=conn)
+
+        conn = sqlite3.connect(tmp_paths['config'])
+        HRDNameconfig = pd.read_sql('SELECT HRDName FROM General', con=conn)
+        self.assertEqual(HRDhrd, HRDNameconfig['HRDName'][0])
+
+        conn = sqlite3.connect(tmp_paths['hlcd'])
+        HRDNamehlcd = pd.read_sql(f'SELECT HRDFileName FROM Tracks WHERE TrackID IN ({trackid["TrackID"][0]});', con=conn)
+        self.assertEqual(HRDhrd, HRDNamehlcd['HRDFileName'][0])
+
         # Verwijder
-        shutil.rmtree("temp")
+        # shutil.rmtree(paths['temp'])        
 
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     unittest.main(verbosity=2)

@@ -10,6 +10,7 @@ from hbhavens.ui.tabs.general import InteractiveLegend, SplittedTab
 
 logger = logging.getLogger(__name__)
 
+
 class DataViewerTab(SplittedTab):
     """
     Widget with the scatter data viewer.
@@ -120,6 +121,21 @@ class DataViewerTab(SplittedTab):
         else:
             raise KeyError(f'Method not recognized: "{method}"')
 
+    def remove_table(self):
+        """
+        Method to remove the current table. To be called when a new calculation is started.
+        """
+        self.dataselector.destruct_dataselection()
+        self.dataselector.tables.clear()
+        self.dataselector.input_variables.clear()
+        self.dataselector.result_variables.clear()
+        self.dataselector.selectedtable = ''
+        self.dataselector.tableselector.combobox.setCurrentIndex(0)
+        while self.dataselector.tableselector.combobox.count() > 1:
+            self.dataselector.tableselector.combobox.removeItem(1)
+        self.scatterplot.remove_all_scatters()
+
+
 class ScatterPlotWidget(QtWidgets.QWidget):
 
     def __init__(self):
@@ -208,7 +224,6 @@ class ScatterPlotWidget(QtWidgets.QWidget):
         self.legend._update_legend()
         self.figure.tight_layout()
 
-
     def update_scatters(self, resultvals=None):
 
         # Update data if provided
@@ -236,6 +251,7 @@ class ScatterPlotWidget(QtWidgets.QWidget):
         self.ax.autoscale_view(True, True, True)
         self.figure.tight_layout()
         self.canvas.draw_idle()
+
 
 class DataSelectorWidget(QtWidgets.QWidget):
 

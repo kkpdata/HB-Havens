@@ -664,8 +664,6 @@ class TMS:
             del self.images[i]
             del self.tiles[i]
 
-
-
 class ListModel(QtCore.QAbstractListModel):
     def __init__(self, datain, parent=None, *args):
         """ datain: a list where each item is a row
@@ -681,5 +679,3 @@ class ListModel(QtCore.QAbstractListModel):
             return QtCore.QVariant(self.listdata[index.row()])
         else:
             return QtCore.QVariant()
-
-        # -*- coding: utf-8 -*-

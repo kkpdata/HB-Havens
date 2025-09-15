@@ -1,6 +1,10 @@
 import logging
+import os
 
 def initialize_logger(filename='hbhavens.log', level=logging.INFO, include_console=False):
+
+    if not os.path.exists(os.path.dirname(filename)):
+        os.mkdir(os.path.dirname(filename))
 
     handlers = [logging.FileHandler(filename, mode='w')]
     if include_console:

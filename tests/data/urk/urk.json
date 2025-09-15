@@ -2,36 +2,28 @@
   "project": {
     "software": {
       "name": "HB Havens",
-      "version": "2.0",
-      "date": "september 2019"
+      "version": "25.1.1",
+      "date": "Augustus 2025"
     },
-    "name": "PR4982.10",
+    "name": "urk",
     "user": {
-      "name": "Matthijs Benit",
+      "name": "Matthijs B\u00e9nit",
       "email": "benit@hkv.nl"
     },
     "created": {
-      "date": "24-Jul-2023",
-      "time": "13:58:11"
+      "date": "11-Sep-2025",
+      "time": "09:20:11"
     },
     "last_modified": {
-      "date": "28-Sep-2023",
-      "time": "10:36:52"
+      "date": "11-Sep-2025",
+      "time": "09:20:21"
     },
-    "progress": 7
+    "progress": 0
   },
   "schematisation": {
-    "harbor_area_shape": "tests/data/urk/shapes/haventerrein.shp",
-    "breakwater_shape": "tests/data/urk/shapes/havendammen.shp",
-    "entrance_coordinate": "",
-    "flooddefence_ids": [
-      "7-2"
-    ],
-    "fd_snap_distance": 10,
-    "representative_bedlevel": -5.0,
-    "support_location_name": "YM_3_7-2_ha02_00001",
-    "result_locations_shape": "tests/data/urk/shapes/uitvoerlocaties.shp",
-    "breakwater": {
+    "harbor_area_shape": "tests\\data\\urk\\shapes\\haventerrein.shp",
+    "breakwater_shape": "tests\\data\\urk\\shapes\\havendammen.shp",
+    "breakwater_properties": {
       "height": [
         3.0,
         2.5
@@ -44,10 +36,18 @@
         0.1,
         0.1
       ]
-    }
+    },
+    "entrance_coordinate": "",
+    "flooddefence_ids": [
+      "7-2"
+    ],
+    "fd_snap_distance": 10,
+    "representative_bedlevel": -5.0,
+    "support_location_name": "YM_3_7-2_ha02_00001",
+    "result_locations_shape": "tests\\data\\urk\\shapes\\uitvoerlocaties.shp"
   },
   "hydraulic_loads": {
-    "HRD": "tests/data/urk/databases/WBI2017_IJsselmeer_7-2_v02_steunpunt.sqlite",
+    "HRD": "tests\\data\\urk\\databases\\WBI2017_IJsselmeer_7-2_v02.sqlite",
     "recalculate_waterlevels": false,
     "recalculate_method": "regression",
     "waterlevels": []
@@ -66,8 +66,7 @@
     "processes": [
       "Diffractie",
       "Transmissie",
-      "Lokale golfgroei",
-      "Golfbreking"
+      "Lokale golfgroei"
     ]
   },
   "swan": {
@@ -180,8 +179,10 @@
     "schematisations": {}
   },
   "export": {
-    "export_HLCD_and_config": true,
+    "remove_original_HRD_loc": false,
+    "export_HLCD_and_config": false,
+    "HRD": "C:\\Users\\Benit\\HB Havens R489\\temp\\urk\\WBI2017_IJsselmeer_7-2_v02.sqlite",
     "HLCD": "",
-    "export_succeeded": false
+    "export_succeeded": true
   }
 }
